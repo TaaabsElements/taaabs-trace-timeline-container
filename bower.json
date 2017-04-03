@@ -1,0 +1,29 @@
+{
+  "name": "taaabs-trace-timeline-container",
+  "version": "0.1.0",
+  "description": "A graphical elements that displays a timeline and its ruler for a kTBS trace.",
+  "keywords": [
+    "web-components",
+    "polymer",
+    "taaabs"
+  ],
+  "authors": [
+    "Rémi Casado"
+  ],
+  "repository": {
+   "type": "git",
+   "url": "https://github.com/TaaabsElements/taaabs-trace-timeline-container.git"
+  },
+  "main": "taaabs-trace-timeline-container.html",
+  "license": "https://github.com/TaaabsElements/taaabs-trace-timeline-container/LICENSE",
+  "dependencies": {
+    "polymer": "polymer/polymer",
+    "taaabs-trace-timeline": "https://github.com/TaaabsElements/taaabs-trace-timeline.git",
+    "taaabs-trace-timeline-scroller": "https://github.com/TaaabsElements/taaabs-trace-timeline-scroller.git"
+  },
+  "devDependencies": {
+    "iron-component-page": "polymerelements/iron-component-page#^1.0.0",
+    "webcomponentsjs": "webcomponents/webcomponentsjs#^0.7.0"
+  },
+  "ignore": []
+}

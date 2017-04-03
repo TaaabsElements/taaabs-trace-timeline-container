@@ -1,0 +1,377 @@
+<link rel="import" href="../taaabs-trace-timeline-scroller/taaabs-trace-timeline-scroller.html">
+<link rel="import" href="../taaabs-trace-timeline/taaabs-trace-timeline.html">
+
+<!--
+`<taaabs-trace-timeline-container>` is a graphical elements that displays a timeline and its ruler for a kTBS trace.
+
+In typical use, just insert a `<taaabs-trace-timeline-container>`, and set the traceUri.
+TODO: Retrieve the trace with only the traceUri.
+TODO: Flex Width & Height
+-->
+<dom-module id="taaabs-trace-timeline-container">
+  <template>
+    <style>
+      :host {
+        display: block;
+      }
+    </style>
+    <taaabs-trace-timeline id="timeline" style="height: 315px; width: 1400px"></taaabs-trace-timeline>
+    <taaabs-trace-timeline-scroller id="scroller" style="height: 65px; width: 1400px;"></taaabs-trace-timeline-scroller>
+  </template>
+  <script>
+    Polymer({
+      is: 'taaabs-trace-timeline-container',
+
+      properties: {
+
+        /**
+         * The trace.
+         *
+         * @attribute trace
+         * @type Object
+         */
+        trace: {
+          type: Object,
+          value: null
+        },
+
+        /**
+         * The trace URI.
+         *
+         * @attribute traceUri
+         * @type String
+         */
+        traceUri: {
+          type: String,
+          value: null
+        },
+
+        /**
+         * The trace stats.
+         *
+         * @attribute traceStats
+         * @type String
+         */
+        traceStats: {
+          type: String,
+          value: null
+        },
+
+        /**
+         * Begin time of the current interval.
+         *
+         * @attribute _currentBegin
+         * @type Number
+         */
+        _currentBegin: {
+          type: Number,
+          value: 0
+        },
+
+        /**
+         * End time of the current interval.
+         *
+         * @attribute _currentEnd
+         * @type Number
+         */
+        _currentEnd: {
+          type: Number,
+          value: 0
+        },
+
+        /**
+         * True if `timeline-scroller-new-bounds` is already listened. False otherwise.
+         *
+         * @attribute _isEventListened
+         * @type Boolean
+         */
+        _isEventListened: {
+         type: Boolean,
+         value: false
+        },
+
+        /**
+         * True if we download two part of obsels, surrounding the pack already downloaded.
+         * False otherwise.
+         *
+         * @attribute _isLoadingTwoParts
+         * @type Boolean
+         */
+        _isLoadingTwoParts: {
+          type: Boolean,
+          value: false
+        },
+
+        /**
+         * List of the obsels currently downloaded.
+         *
+         * @attribute _loadingObselsList
+         * @type Array
+         */
+        _loadingObselsList: {
+          type: Array,
+          value: []
+        },
+
+        /**
+         * Max time ever downloaded.
+         *
+         * @attribute _maxEnd
+         * @type Number
+         */
+        _maxEnd: {
+          type: Number,
+          value: Number.NEGATIVE_INFINITY
+        },
+
+        /**
+         * Minimum time ever downloaded.
+         *
+         * @attribute _minBegin
+         * @type Number
+         */
+        _minBegin: {
+          type: Number,
+          value: Number.POSITIVE_INFINITY
+        },
+
+        /**
+         * List of the obsels.
+         *
+         * @attribute _obselsList
+         * @type Array
+         */
+        _obselsList: {
+          type: Array,
+          value: []
+        },
+
+        /**
+         * End of the second part of obsels to download.
+         *
+         * @attribute _secondPartEnd
+         * @type Number
+         */
+        _secondPartEnd: {
+          type: Number,
+          value: 0
+        }
+      },
+
+      attached: function() {
+        if(!this._isEventListened){
+          this.$.scroller.addEventListener('timeline-scroller-new-bounds', this._onTimelineScrollerNewBounds.bind(this));
+          this.set('_isEventListened', true);
+        }
+      },
+
+      ready: function() {},
+
+      /**
+       * Reset the timeline and the scroller.
+       *
+       * @method refresh
+       */
+      refresh: function(){
+        // Get the begin and end of the trace.
+        var b = this.traceStats['stats:minTime'];
+        var e = this.traceStats['stats:maxTime'];
+        // Set the scroller vars.
+        this.$.scroller.set('begin', b);
+        this.$.scroller.set('end', e);
+        this.$.scroller.initVisu();
+        // Set the timeline vars
+        this.$.timeline.initVisu();
+      },
+
+      /**
+       * Add the obsels to `_obelsList`.
+       *
+       * @param {!required} list (Array) A list of obsels to add to `_obselsList`.
+       *
+       * @method _addObselsToList
+       */
+      _addObselsToList: function(list){
+        if(this._obselsList.length === 0){
+          this.set('_obselsList', list);
+          this.set('_minBegin', list[0].begin);
+          this.set('_maxEnd', list[0].end);
+        }
+        else if(list[0].begin < this._minBegin){
+          this.set('_minBegin', list[0].begin);
+          this.set('_obselsList', list.concat(this.get('_obselsList')));
+        }
+        else{
+          this.set('_maxEnd', list[list.length - 1].end);
+          this.set('_obselsList', this.get('_obselsList').concat(list));
+        }
+      },
+
+      /**
+       * Set the symbol of a list of obsels according to the `stylesheet`.
+       * TODO: Set default symbol.
+       *
+       * @param {!required} list (Array) The obsels.
+       *
+       * @method _applyStyleOnObsels
+       */
+      _applyStyleOnObsels: function(list){
+        var result = [];
+        var r = this.stylesheet.rules;
+        var t = [];
+        // For every obsels, sort the list of rule following :
+        // number of type prior number of attribute prior index of rule.
+        for(var i = 0; i < list.length; i++){
+          t = [];
+          var o = {};
+          for(var j = 0; j < r.length; j++){
+            o = {'id': j.id, 'i': j, 't': 0, 'a': 0};
+            var tan = 0;
+            for(var k = 0; k < r[j].rules.length; k++){
+              if(list[i]['@type'] === 'm:'+r[j].rules[k].type){
+                o.t = 1;
+              }
+              //TODO Attributes
+            }
+            t.push(o);
+          }
+          t.sort(function(a, b) {
+            if(a.t === b.t){
+              if(a.a === b.a){
+                if(a.i > b.i){
+                  return 1;
+                }
+                else{
+                  return -1;
+                }
+              }
+              else if(a.a > b.a){
+                return -1;
+              }
+              else{
+                return 1;
+              }
+            }
+            else if(a.t > b.t){
+              return -1;
+            }
+            else{
+              return 1;
+            }
+          });
+          result.push({
+            'obsel': list[i],
+            'symbol': r[t[0].i].symbol,
+            'visible': r[t[0].i].visible
+          })
+        }
+        return result;
+      },
+
+      /**
+       * Download the obsels.
+       *
+       * @param {!required} start (Number) The begin time of the interval to download.
+       * @param {!required} stop (Number) The end time of the interval to download.
+       *
+       * @method _downloadObsels
+       */
+      _downloadObsels: function(start, stop, limit, uri){
+         limit = limit || 100;
+         var minb = (start) ? 'minb='+start : '';
+         var after = (uri) ? 'after='+uri : '';
+         var maxe = (stop) ? '&maxe='+stop : '';
+         var request = this.traceUri + '@obsels?'+minb+after+maxe+'&limit='+limit;
+         var XMLReq = new XMLHttpRequest();
+         XMLReq.open("GET", request);
+         XMLReq.setRequestHeader('Content-Type', 'application/json');
+         XMLReq.setRequestHeader('Accept', 'application/ld+json');
+         XMLReq.withCredentials = true;
+         XMLReq.onreadystatechange = function() {
+           if (XMLReq.readyState === 4) {
+             if (XMLReq.status === 200 || XMLReq.status === 201 || XMLReq.status === 304) {
+               var obs = (JSON.parse(XMLReq.response)).obsels;
+               for(var i = 0; i < obs.length; i++){
+                 this.push('_loadingObselsList', obs[i]);
+               }
+               this.$.timeline.addObsels(this._applyStyleOnObsels(obs));
+               if(obs.length > 0 && obs[obs.length - 1].end < stop){
+                 this._downloadObsels( null, stop, limit, obs[obs.length - 1]['@id']);
+               } else {
+                 this._addObselsToList(this.get('_loadingObselsList'));
+                 this.set('_loadingObselsList', []);
+                 if(this._isLoadingTwoParts){
+                   this.set('_isLoadingTwoParts', false);
+                   this._downloadObsels(this._maxEnd, this._secondPartEnd);
+                 }
+               }
+             } else {
+               console.log(XMLReq);
+             }
+           }
+         }.bind(this);
+         XMLReq.onerror = function(err) {
+           console.log(err);
+         };
+         XMLReq.send(null);
+       },
+
+       /**
+        * Download the obsels.
+        *
+        * @param {!required} begin (Number) The begin time of the selected interval.
+        * @param {!required} end (Number) The end time of the selected interval.
+        *
+        * @method _onScrollerNewBounds
+        */
+       _onScrollerNewBounds: function(begin, end){
+         var start = (begin > this._minBegin) ? this._maxEnd : begin;
+         var stop = (end < this._maxEnd) ? this._minBegin : end;
+         // If the chosen interval have not been downloaded yet, we download it.
+         // Otherwise, we just display the obsels downloaded.
+         if(stop > start){
+           var me = (this._maxEnd !== Number.NEGATIVE_INFINITY);
+           var mb = (this._minBegin !== Number.POSITIVE_INFINITY);
+           this._startDownloadObsels(start, stop, (stop > this._maxEnd && me && start < this._minBegin && mb));
+         }
+         this.set('_currentBegin', begin);
+         this.set('_currentEnd', end);
+         this.$.timeline._setTemporalBounds(this._currentBegin, this._currentEnd);
+       },
+
+      /**
+       * Calls `_onScrollerNewBounds`.
+       *
+       * @param {!required} evt (Event) The `timeline-scroller-new-bounds` event.
+       *
+       * @method _onTimelineScrollerNewBounds
+       */
+      _onTimelineScrollerNewBounds: function(evt){
+        var b = evt.detail.b;
+        var e = evt.detail.e;
+        this._onScrollerNewBounds(b, e);
+      },
+
+      /**
+       * Download the obsels.
+       *
+       * @param {!required} start (Number)  The begin time of the interval to download.
+       * @param {!required} stop  (Number)  The end time of the interval to download.
+       * @param {!required} split (Boolean) Download two parts if true. One otherwise.
+       *
+       * @method _startDownloadObsels
+       */
+      _startDownloadObsels: function(start, stop, split){
+        this.set('_isLoadingTwoParts', split);
+        if(split){
+          this.set('_secondPartEnd', stop);
+          this._downloadObsels(start,this._minBegin);
+        }
+        else{
+          this._downloadObsels(start,stop);
+        }
+      }
+
+    });
+  </script>
+</dom-module>
