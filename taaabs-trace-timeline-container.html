@@ -1,5 +1,7 @@
 <link rel="import" href="../taaabs-trace-timeline-scroller/taaabs-trace-timeline-scroller.html">
 <link rel="import" href="../taaabs-trace-timeline/taaabs-trace-timeline.html">
+<link rel="import" href="../paper-progress/paper-progress.html">
+
 
 <!--
 `<taaabs-trace-timeline-container>` is a graphical elements that displays a timeline and its ruler for a kTBS trace.
@@ -10,13 +12,20 @@ TODO: Flex Width & Height
 -->
 <dom-module id="taaabs-trace-timeline-container">
   <template>
-    <style>
+    <style is="custom-style">
       :host {
         display: block;
+      }
+      #progress {
+        width: 1400px;
+        height: 10px;
+        --paper-progress-active-color: var(--paper-blue-500);
+        --paper-progress-indeterminate-cycle-duration: 5s;
       }
     </style>
     <taaabs-trace-timeline id="timeline" style="height: 315px; width: 1400px"></taaabs-trace-timeline>
     <taaabs-trace-timeline-scroller id="scroller" style="height: 65px; width: 1400px;"></taaabs-trace-timeline-scroller>
+    <paper-progress id="progress" indeterminate disabled></paper-progress>
   </template>
   <script>
     Polymer({
@@ -304,6 +313,9 @@ TODO: Flex Width & Height
                    this.set('_isLoadingTwoParts', false);
                    this._downloadObsels(this._maxEnd, this._secondPartEnd);
                  }
+                 else{
+                   this.$.progress.set('disabled', true);
+                 }
                }
              } else {
                console.log(XMLReq);
@@ -332,6 +344,7 @@ TODO: Flex Width & Height
          if(stop > start){
            var me = (this._maxEnd !== Number.NEGATIVE_INFINITY);
            var mb = (this._minBegin !== Number.POSITIVE_INFINITY);
+           this.$.progress.set('disabled', false);
            this._startDownloadObsels(start, stop, (stop > this._maxEnd && me && start < this._minBegin && mb));
          }
          this.set('_currentBegin', begin);

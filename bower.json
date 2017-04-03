@@ -19,7 +19,8 @@
   "dependencies": {
     "polymer": "polymer/polymer",
     "taaabs-trace-timeline": "https://github.com/TaaabsElements/taaabs-trace-timeline.git",
-    "taaabs-trace-timeline-scroller": "https://github.com/TaaabsElements/taaabs-trace-timeline-scroller.git"
+    "taaabs-trace-timeline-scroller": "https://github.com/TaaabsElements/taaabs-trace-timeline-scroller.git",
+    "paper-progress": "PolymerElements/paper-progress"
   },
   "devDependencies": {
     "iron-component-page": "polymerelements/iron-component-page#^1.0.0",
