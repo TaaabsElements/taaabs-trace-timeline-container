@@ -89,6 +89,17 @@ TODO: Flex Width & Height
         },
 
         /**
+         * Either 'FIRST', 'BEFORE' or 'AFTER'.
+         *
+         * @attribute _downloadType
+         * @type String
+         */
+        _downloadType: {
+         type: String,
+         value: ""
+        },
+
+        /**
          * True if `timeline-scroller-new-bounds` is already listened. False otherwise.
          *
          * @attribute _isEventListened
@@ -97,18 +108,6 @@ TODO: Flex Width & Height
         _isEventListened: {
          type: Boolean,
          value: false
-        },
-
-        /**
-         * True if we download two part of obsels, surrounding the pack already downloaded.
-         * False otherwise.
-         *
-         * @attribute _isLoadingTwoParts
-         * @type Boolean
-         */
-        _isLoadingTwoParts: {
-          type: Boolean,
-          value: false
         },
 
         /**
@@ -194,29 +193,6 @@ TODO: Flex Width & Height
       },
 
       /**
-       * Add the obsels to `_obelsList`.
-       *
-       * @param {!required} list (Array) A list of obsels to add to `_obselsList`.
-       *
-       * @method _addObselsToList
-       */
-      _addObselsToList: function(list){
-        if(this._obselsList.length === 0){
-          this.set('_obselsList', list);
-          this.set('_minBegin', list[0].begin);
-          this.set('_maxEnd', list[0].end);
-        }
-        else if(list[0].begin < this._minBegin){
-          this.set('_minBegin', list[0].begin);
-          this.set('_obselsList', list.concat(this.get('_obselsList')));
-        }
-        else{
-          this.set('_maxEnd', list[list.length - 1].end);
-          this.set('_obselsList', this.get('_obselsList').concat(list));
-        }
-      },
-
-      /**
        * Set the symbol of a list of obsels according to the `stylesheet`.
        * TODO: Set default symbol.
        *
@@ -285,11 +261,11 @@ TODO: Flex Width & Height
        *
        * @method _downloadObsels
        */
-      _downloadObsels: function(start, stop, limit, uri){
+      _downloadObsels: function(start, stop, limit, uri, _resolve, _reject){
          limit = limit || 100;
-         var minb = (start) ? 'minb='+start : '';
-         var after = (uri) ? 'after='+uri : '';
-         var maxe = (stop) ? '&maxe='+stop : '';
+         var minb  = (start) ? 'minb='+start  : '';
+         var after = (uri)   ? 'after='+uri   : '';
+         var maxe  = (stop)  ? '&maxe='+stop  : '';
          var request = this.traceUri + '@obsels?'+minb+after+maxe+'&limit='+limit;
          var XMLReq = new XMLHttpRequest();
          XMLReq.open("GET", request);
@@ -304,28 +280,54 @@ TODO: Flex Width & Height
                  this.push('_loadingObselsList', obs[i]);
                }
                this.$.timeline.addObsels(this._applyStyleOnObsels(obs));
-               if(obs.length > 0 && obs[obs.length - 1].end < stop){
+               if(obs.length > 0){
                  this._downloadObsels( null, stop, limit, obs[obs.length - 1]['@id']);
                } else {
-                 this._addObselsToList(this.get('_loadingObselsList'));
-                 this.set('_loadingObselsList', []);
-                 if(this._isLoadingTwoParts){
-                   this.set('_isLoadingTwoParts', false);
-                   this._downloadObsels(this._maxEnd, this._secondPartEnd);
-                 }
-                 else{
-                   this.$.progress.set('disabled', true);
-                 }
+                 this._handleDownloadResults();
                }
              } else {
-               console.log(XMLReq);
+               _reject(XMLReq);
              }
            }
          }.bind(this);
          XMLReq.onerror = function(err) {
-           console.log(err);
+           reject(err);
          };
          XMLReq.send(null);
+
+       },
+
+       /**
+        * Called after a download, to fill `_obselsList`
+        *
+        * @method _handleDownloadResults
+        */
+       _handleDownloadResults: function(){
+         if(this._downloadType === 'FIRST'){
+           this.set('_obselsList', this.get('_loadingObselsList'));
+           this.set('_loadingObselsList', []);
+           this.set('_minBegin', this.get('_currentBegin'));
+           this.set('_maxEnd',   this.get('_currentEnd'));
+           this.$.progress.set('disabled', true);
+         }
+         else if(this._downloadType === 'BEFORE'){
+           this.set('_obselsList', this.get('_loadingObselsList').concat(this.get('_obselsList')));
+           this.set('_loadingObselsList', []);
+           this.set('_minBegin', this.get('_currentBegin'));
+           if(this._currentEnd > this._maxEnd){
+             this.set('_downloadType', 'AFTER');
+             this._downloadObsels(this._maxEnd, this._currentEnd);
+           }
+           else{
+             this.$.progress.set('disabled', true);
+           }
+         }
+         else if(this._downloadType === 'AFTER'){
+           this.set('_maxEnd', this.get('_currentEnd'));
+           this.set('_obselsList', (this.get('_obselsList')).concat(this.get('_loadingObselsList')));
+           this.set('_loadingObselsList', []);
+           this.$.progress.set('disabled', true);
+         }
        },
 
        /**
@@ -337,19 +339,36 @@ TODO: Flex Width & Height
         * @method _onScrollerNewBounds
         */
        _onScrollerNewBounds: function(begin, end){
-         var start = (begin > this._minBegin) ? this._maxEnd : begin;
-         var stop = (end < this._maxEnd) ? this._minBegin : end;
-         // If the chosen interval have not been downloaded yet, we download it.
-         // Otherwise, we just display the obsels downloaded.
-         if(stop > start){
-           var me = (this._maxEnd !== Number.NEGATIVE_INFINITY);
-           var mb = (this._minBegin !== Number.POSITIVE_INFINITY);
-           this.$.progress.set('disabled', false);
-           this._startDownloadObsels(start, stop, (stop > this._maxEnd && me && start < this._minBegin && mb));
-         }
          this.set('_currentBegin', begin);
          this.set('_currentEnd', end);
          this.$.timeline.setTemporalBounds(this._currentBegin, this._currentEnd);
+         // If the chosen interval have not been downloaded yet, we download it.
+         // Otherwise, we just display the obsels downloaded.
+         if(this._obselsList.length === 0){
+           this.$.progress.set('disabled', false);
+           this.set('_downloadType', 'FIRST');
+           this._downloadObsels(this._currentBegin, this._currentEnd);
+         }
+         else{
+           if(this._currentBegin < this._minBegin){
+             this.$.progress.set('disabled', false);
+             this.set('_downloadType', 'BEFORE');
+             this._downloadObsels(this._currentBegin, this._minBegin);
+           }
+           else if(this._currentEnd > this._maxEnd){
+             this.$.progress.set('disabled', false);
+             this.set('_downloadType', 'AFTER');
+             this._downloadObsels(this._maxEnd, this._currentEnd);
+           }
+           var obs = [];
+           for(var i = 0; i < this._obselsList.length; i++){
+             // TODO Get this more opti
+             if(this._obselsList[i].begin >= this._currentBegin && this._obselsList[i].end <= this._currentEnd){
+               obs.push(this._obselsList[i])
+             }
+           }
+           this.$.timeline.addObsels(this._applyStyleOnObsels(obs));
+         }
        },
 
       /**
@@ -363,26 +382,6 @@ TODO: Flex Width & Height
         var b = evt.detail.b;
         var e = evt.detail.e;
         this._onScrollerNewBounds(b, e);
-      },
-
-      /**
-       * Download the obsels.
-       *
-       * @param {!required} start (Number)  The begin time of the interval to download.
-       * @param {!required} stop  (Number)  The end time of the interval to download.
-       * @param {!required} split (Boolean) Download two parts if true. One otherwise.
-       *
-       * @method _startDownloadObsels
-       */
-      _startDownloadObsels: function(start, stop, split){
-        this.set('_isLoadingTwoParts', split);
-        if(split){
-          this.set('_secondPartEnd', stop);
-          this._downloadObsels(start,this._minBegin);
-        }
-        else{
-          this._downloadObsels(start,stop);
-        }
       }
 
     });
