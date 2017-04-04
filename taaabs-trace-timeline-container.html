@@ -169,6 +169,7 @@ TODO: Flex Width & Height
       attached: function() {
         if(!this._isEventListened){
           this.$.scroller.addEventListener('timeline-scroller-new-bounds', this._onTimelineScrollerNewBounds.bind(this));
+          this.$.scroller.addEventListener('timeline-scroller-shift', this._onTimelineScrollerShift.bind(this));
           this.set('_isEventListened', true);
         }
       },
@@ -370,6 +371,36 @@ TODO: Flex Width & Height
            this.$.timeline.addObsels(this._applyStyleOnObsels(obs));
          }
        },
+
+       /**
+        * .
+        *
+        * @param {!required} evt {String} The `timeline-scoller-shift` event.
+        *
+        * @method _onTimelineScrollerShift
+        */
+      _onTimelineScrollerShift: function(evt) {
+        this.set('_currentBegin', evt.detail.b);
+        this.set('_currentEnd',   evt.detail.e);
+        var b = evt.detail.nb;
+        var e = evt.detail.ne;
+        var d = evt.detail.d;
+        if(d = 'left'){
+          if(this._currentEnd < this._maxEnd){
+            var obs = [];
+            for(var i = 0; i < this._obselsList.length; i++){
+              // TODO Get this more opti
+              if(this._obselsList[i].begin >= b && this._obselsList[i].end <= e){
+                obs.push(this._obselsList[i])
+              }
+            }
+            this.$.timeline.shiftObsels(this._applyStyleOnObsels(obs), d);
+          }
+        }
+        else{
+
+        }
+      },
 
       /**
        * Calls `_onScrollerNewBounds`.
