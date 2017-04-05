@@ -111,6 +111,17 @@ TODO: Flex Width & Height
         },
 
         /**
+         * List of the loading process waiting to be launched.
+         *
+         * @attribute _loadingProcessList
+         * @type Array
+         */
+        _loadingProcessList: {
+         type: Array,
+         value: []
+        },
+
+        /**
          * List of the obsels currently downloaded.
          *
          * @attribute _loadingObselsList
@@ -170,6 +181,7 @@ TODO: Flex Width & Height
         if(!this._isEventListened){
           this.$.scroller.addEventListener('timeline-scroller-new-bounds', this._onTimelineScrollerNewBounds.bind(this));
           this.$.scroller.addEventListener('timeline-scroller-shift', this._onTimelineScrollerShift.bind(this));
+          this.$.timeline.addEventListener('timeline-interval-selected', this._onTimelineIntervalSelected.bind(this));
           this.set('_isEventListened', true);
         }
       },
@@ -310,6 +322,7 @@ TODO: Flex Width & Height
            this.set('_minBegin', this.get('_currentBegin'));
            this.set('_maxEnd',   this.get('_currentEnd'));
            this.$.progress.set('disabled', true);
+           this._launchLoadingProcess();
          }
          else if(this._downloadType === 'BEFORE'){
            this.set('_obselsList', this.get('_loadingObselsList').concat(this.get('_obselsList')));
@@ -321,6 +334,7 @@ TODO: Flex Width & Height
            }
            else{
              this.$.progress.set('disabled', true);
+             this._launchLoadingProcess();
            }
          }
          else if(this._downloadType === 'AFTER'){
@@ -328,6 +342,7 @@ TODO: Flex Width & Height
            this.set('_obselsList', (this.get('_obselsList')).concat(this.get('_loadingObselsList')));
            this.set('_loadingObselsList', []);
            this.$.progress.set('disabled', true);
+           this._launchLoadingProcess();
          }
        },
 
@@ -337,11 +352,11 @@ TODO: Flex Width & Height
         * @param {!required} begin (Number) The begin time of the selected interval.
         * @param {!required} end (Number) The end time of the selected interval.
         *
-        * @method _onScrollerNewBounds
+        * @method _loadTimelineScrollerNewBounds
         */
-       _onScrollerNewBounds: function(begin, end){
-         this.set('_currentBegin', begin);
-         this.set('_currentEnd', end);
+       _loadTimelineScrollerNewBounds: function(process){
+         this.set('_currentBegin', process.overall_begin);
+         this.set('_currentEnd'  , process.overall_end  );
          this.$.timeline.setTemporalBounds(this._currentBegin, this._currentEnd);
          // If the chosen interval have not been downloaded yet, we download it.
          // Otherwise, we just display the obsels downloaded.
@@ -361,6 +376,9 @@ TODO: Flex Width & Height
              this.set('_downloadType', 'AFTER');
              this._downloadObsels(this._maxEnd, this._currentEnd);
            }
+           else{
+             this._launchLoadingProcess();
+           }
            var obs = [];
            for(var i = 0; i < this._obselsList.length; i++){
              // TODO Get this more opti
@@ -372,6 +390,81 @@ TODO: Flex Width & Height
          }
        },
 
+       _loadTimelineIntervalSelected: function(process){
+         this.set('_currentBegin', process.overall_begin);
+         this.set('_currentEnd'  , process.overall_end  );
+         this.$.timeline.setTemporalBounds(this._currentBegin, this._currentEnd);
+         this.$.timeline.addObsels(this._applyStyleOnObsels(this._getObselsForCurrentBounds()));
+         this.$.scroller.updateVisu(this._currentBegin, this._currentEnd);
+         this._launchLoadingProcess();
+       },
+
+       _launchLoadingProcess: function(){
+         console.log('_launchLoadingProcess : ');
+         if(this._loadingProcessList.length > 0){
+           var p = this.splice('_loadingProcessList', 0, 1)[0];
+           console.log('   p : ');
+           console.log(p);
+           switch(p.type){
+             case 'timeline-scoller-shift':
+              this._loadTimelineScrollerShift(p);
+             break;
+             case 'timeline-scroller-new-bounds':
+              this._loadTimelineScrollerNewBounds(p);
+             break;
+             case 'timeline-interval-selected':
+              this._loadTimelineIntervalSelected(p);
+             break;
+           }
+         }
+         else{
+           console.log('end launching');
+           this.set('_isProcessLaunched', false);
+         }
+       },
+
+
+       _getObselsForCurrentBounds: function(b, e){
+         b = b || this._currentBegin;
+         e = e || this._currentEnd;
+         var obs = [];
+         for(var i = 0; i < this._obselsList.length; i++){
+           // TODO Get this more opti.
+           if(this._obselsList[i].begin >= b && this._obselsList[i].end <= e){
+             obs.push(this._obselsList[i])
+           }
+         }
+         return obs;
+       },
+
+       _loadTimelineScrollerShift: function(process){
+         // Set the new bounds
+         this.set('_currentBegin', process.overall_begin);
+         this.set('_currentEnd',   process.overall_end);
+         // Create the process var
+         var b = process.shift_begin;
+         var e = process.shift_end;
+         var d = process.direction;
+         // True if we already loaded the obsels. False otherwise.
+         var already_loaded =
+           ((d === 'left' && this._currentEnd < this._maxEnd) ||
+           (d === 'right' && this._currentBegin > this._minBegin));
+         // Load the enw obsels if necessary.
+         if(already_loaded){
+          this.$.timeline.shiftObsels(this._applyStyleOnObsels(this._getObselsForCurrentBounds(b, e)), d);
+          this._launchLoadingProcess();
+         }
+         else{
+          this.$.progress.set('disabled', false);
+          var start = (d === 'left') ? this._maxEnd : this._currentBegin;
+          var end   = (d === 'left') ? this._currentEnd : this._minBegin;
+          var type  = (d === 'left') ? 'AFTER' : 'BEFORE';
+          this.$.timeline.shiftObsels([], d);
+          this.set('_downloadType', type);
+          this._downloadObsels(start, end);
+         }
+       },
+
        /**
         * .
         *
@@ -380,37 +473,19 @@ TODO: Flex Width & Height
         * @method _onTimelineScrollerShift
         */
       _onTimelineScrollerShift: function(evt) {
-        this.set('_currentBegin', evt.detail.b);
-        this.set('_currentEnd',   evt.detail.e);
-        var b = evt.detail.nb;
-        var e = evt.detail.ne;
-        var d = evt.detail.d;
-        if(d === 'left'){
-          if(this._currentEnd < this._maxEnd){
-            var obs = [];
-            for(var i = 0; i < this._obselsList.length; i++){
-              // TODO Get this more opti
-              if(this._obselsList[i].begin >= b && this._obselsList[i].end <= e){
-                obs.push(this._obselsList[i])
-              }
-            }
-            this.$.timeline.shiftObsels(this._applyStyleOnObsels(obs), d);
-          }
-          else{
-
-          }
-        }
-        else{
-          if(this._currentBegin > this._minBegin){
-            var obs = [];
-            for(var i = 0; i < this._obselsList.length; i++){
-              // TODO Get this more opti
-              if(this._obselsList[i].begin >= b && this._obselsList[i].end <= e){
-                obs.push(this._obselsList[i])
-              }
-            }
-            this.$.timeline.shiftObsels(this._applyStyleOnObsels(obs), d);
-          }
+        // Push the new loading process in the waiting line.
+        this.push('_loadingProcessList', {
+          'type'         : 'timeline-scoller-shift',
+          'overall_begin': evt.detail.b,
+          'overall_end'  : evt.detail.e,
+          'shift_begin'  : evt.detail.nb,
+          'shift_end'    : evt.detail.ne,
+          'direction'    : evt.detail.d
+        });
+        // Launch the download process.
+        if(!this._isProcessLaunched){
+          this.set('_isProcessLaunched', true);
+          this._launchLoadingProcess();
         }
       },
 
@@ -422,9 +497,31 @@ TODO: Flex Width & Height
        * @method _onTimelineScrollerNewBounds
        */
       _onTimelineScrollerNewBounds: function(evt){
-        var b = evt.detail.b;
-        var e = evt.detail.e;
-        this._onScrollerNewBounds(b, e);
+        // Push the new loading process in the waiting line.
+        this.push('_loadingProcessList', {
+          'type'         : 'timeline-scroller-new-bounds',
+          'overall_begin': evt.detail.b,
+          'overall_end'  : evt.detail.e
+        });
+        // Launch the download process.
+        if(!this._isProcessLaunched){
+          this.set('_isProcessLaunched', true);
+          this._launchLoadingProcess();
+        }
+      },
+
+      _onTimelineIntervalSelected: function(evt){
+        // Push the new loading process in the waiting line.
+        this.push('_loadingProcessList', {
+          'type'         : 'timeline-interval-selected',
+          'overall_begin': evt.detail.b,
+          'overall_end'  : evt.detail.e
+        });
+        // Launch the download process.
+        if(!this._isProcessLaunched){
+          this.set('_isProcessLaunched', true);
+          this._launchLoadingProcess();
+        }
       }
 
     });
