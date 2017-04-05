@@ -385,7 +385,7 @@ TODO: Flex Width & Height
         var b = evt.detail.nb;
         var e = evt.detail.ne;
         var d = evt.detail.d;
-        if(d = 'left'){
+        if(d === 'left'){
           if(this._currentEnd < this._maxEnd){
             var obs = [];
             for(var i = 0; i < this._obselsList.length; i++){
@@ -396,9 +396,21 @@ TODO: Flex Width & Height
             }
             this.$.timeline.shiftObsels(this._applyStyleOnObsels(obs), d);
           }
+          else{
+
+          }
         }
         else{
-
+          if(this._currentBegin > this._minBegin){
+            var obs = [];
+            for(var i = 0; i < this._obselsList.length; i++){
+              // TODO Get this more opti
+              if(this._obselsList[i].begin >= b && this._obselsList[i].end <= e){
+                obs.push(this._obselsList[i])
+              }
+            }
+            this.$.timeline.shiftObsels(this._applyStyleOnObsels(obs), d);
+          }
         }
       },
 
