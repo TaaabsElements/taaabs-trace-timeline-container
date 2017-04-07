@@ -188,6 +188,10 @@ TODO: Flex Width & Height
 
       ready: function() {},
 
+      updateTimeline: function(){
+        this.$.timeline.redrawObsels(this._applyStyleOnObsels(this._getObselsForCurrentBounds()));
+      },
+
       /**
        * Reset the timeline and the scroller.
        *
@@ -229,7 +233,42 @@ TODO: Flex Width & Height
               if(list[i]['@type'] === 'm:'+r[j].rules[k].type){
                 o.t = 1;
               }
-              //TODO Attributes
+              for(var l = 0; l < r[j].rules[k].attributes.length; l++){
+                console.log(r[j].rules[k].attributes[l]);
+                console.log(r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:'));
+                console.log(list[i]);
+                console.log(list[i][r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')]);
+                if(list[i][r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')] !== undefined &&
+                list[i][r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')] !== null){
+                  switch(r[j].rules[k].attributes[l].operator){
+                    case "==":
+                      if(list[i][r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')] == r[j].rules[k].attributes[l].value){
+                        o.a += 1;
+                      }
+                    break;
+                    case ">":
+                      if(Number(list[i][r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')]) > Number(r[j].rules[k].attributes[l].value)){
+                        o.a += 1;
+                      }
+                    break;
+                    case ">=":
+                      if(Number(list[i][r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')]) >= Number(r[j].rules[k].attributes[l].value)){
+                        o.a += 1;
+                      }
+                    break;
+                    case "<":
+                      if(Number(list[i][r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')]) < Number(r[j].rules[k].attributes[l].value)){
+                        o.a += 1;
+                      }
+                    break;
+                    case "<=":
+                      if(Number(list[i][r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')]) <= Number(r[j].rules[k].attributes[l].value)){
+                        o.a += 1;
+                      }
+                    break;
+                  }
+                }
+              }
             }
             t.push(o);
           }
