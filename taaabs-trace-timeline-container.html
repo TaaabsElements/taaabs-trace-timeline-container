@@ -231,47 +231,59 @@ TODO: Flex Width & Height
             o = {'id': j.id, 'i': j, 't': 0, 'a': 0};
             var tan = 0;
             for(var k = 0; k < r[j].rules.length; k++){
-              if(list[i]['@type'] === r[j].rules[k].type.replace(this.trace.model_uri+"#", 'm:')){
-                o.t = 1;
+              var doNotMatch = false;
+              if(r[j].rules[k].type !== ""){
+                if(list[i]['@type'] === r[j].rules[k].type.replace(this.trace.model_uri+"#", 'm:')){
+                  o.t = 1;
+                }
+                else{
+                  doNotMatch = true;
+                }
               }
-              for(var l = 0; l < r[j].rules[k].attributes.length; l++){
-                console.log(r[j].rules[k].attributes[l]);
-                console.log(r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:'));
-                console.log(list[i]);
-                console.log(list[i][r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')]);
-                if(list[i][r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')] !== undefined &&
-                list[i][r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')] !== null){
-                  switch(r[j].rules[k].attributes[l].operator){
-                    case "==":
-                      if(list[i][r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')] == r[j].rules[k].attributes[l].value){
-                        o.a += 1;
-                      }
-                    break;
-                    case ">":
-                      if(Number(list[i][r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')]) > Number(r[j].rules[k].attributes[l].value)){
-                        o.a += 1;
-                      }
-                    break;
-                    case ">=":
-                      if(Number(list[i][r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')]) >= Number(r[j].rules[k].attributes[l].value)){
-                        o.a += 1;
-                      }
-                    break;
-                    case "<":
-                      if(Number(list[i][r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')]) < Number(r[j].rules[k].attributes[l].value)){
-                        o.a += 1;
-                      }
-                    break;
-                    case "<=":
-                      if(Number(list[i][r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')]) <= Number(r[j].rules[k].attributes[l].value)){
-                        o.a += 1;
-                      }
-                    break;
+              if(!doNotMatch){
+                for(var l = 0; l < r[j].rules[k].attributes.length; l++){
+                  if(list[i][r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')] !== undefined &&
+                  list[i][r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')] !== null){
+                    switch(r[j].rules[k].attributes[l].operator){
+                      case "==":
+                        if(list[i][r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')] == r[j].rules[k].attributes[l].value){
+                          o.a += 1;
+                        }
+                        else doNotMatch = true;
+                      break;
+                      case ">":
+                        if(Number(list[i][r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')]) > Number(r[j].rules[k].attributes[l].value)){
+                          o.a += 1;
+                        }
+                        else doNotMatch = true;
+                      break;
+                      case ">=":
+                        if(Number(list[i][r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')]) >= Number(r[j].rules[k].attributes[l].value)){
+                          o.a += 1;
+                        }
+                        else doNotMatch = true;
+                      break;
+                      case "<":
+                        if(Number(list[i][r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')]) < Number(r[j].rules[k].attributes[l].value)){
+                          o.a += 1;
+                        }
+                        else doNotMatch = true;
+                      break;
+                      case "<=":
+                        if(Number(list[i][r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')]) <= Number(r[j].rules[k].attributes[l].value)){
+                          o.a += 1;
+                        }
+                        else doNotMatch = true;
+                      break;
+                    }
                   }
                 }
               }
+              if(!doNotMatch) t.push(o);
+              else{
+                t.push({'id': j.id, 'i': j, 't': 0, 'a': 0});
+              }
             }
-            t.push(o);
           }
           t.sort(function(a, b) {
             if(a.t === b.t){
