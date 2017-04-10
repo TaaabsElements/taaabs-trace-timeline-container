@@ -189,6 +189,7 @@ TODO: Flex Width & Height
       ready: function() {},
 
       updateTimeline: function(){
+        console.log(this.stylesheet);
         this.$.timeline.redrawObsels(this._applyStyleOnObsels(this._getObselsForCurrentBounds()));
       },
 
@@ -230,7 +231,7 @@ TODO: Flex Width & Height
             o = {'id': j.id, 'i': j, 't': 0, 'a': 0};
             var tan = 0;
             for(var k = 0; k < r[j].rules.length; k++){
-              if(list[i]['@type'] === 'm:'+r[j].rules[k].type){
+              if(list[i]['@type'] === r[j].rules[k].type.replace(this.trace.model_uri+"#", 'm:')){
                 o.t = 1;
               }
               for(var l = 0; l < r[j].rules[k].attributes.length; l++){
@@ -296,11 +297,13 @@ TODO: Flex Width & Height
               return 1;
             }
           });
-          result.push({
-            'obsel': list[i],
-            'symbol': r[t[0].i].symbol,
-            'visible': r[t[0].i].visible
-          })
+          if(t[0].a !== 0 || t[0].t !== 0)[
+            result.push({
+              'obsel': list[i],
+              'symbol': r[t[0].i].symbol,
+              'visible': r[t[0].i].visible
+            })
+          ]
         }
         return result;
       },
