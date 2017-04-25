@@ -1,7 +1,7 @@
 <link rel="import" href="../taaabs-trace-timeline-scroller/taaabs-trace-timeline-scroller.html">
 <link rel="import" href="../taaabs-trace-timeline/taaabs-trace-timeline.html">
 <link rel="import" href="../paper-progress/paper-progress.html">
-
+<link rel="import" href="../taaabs-themes/taaabs-theme.html">
 
 <!--
 `<taaabs-trace-timeline-container>` is a graphical elements that displays a timeline and its ruler for a kTBS trace.
@@ -12,20 +12,35 @@ TODO: Flex Width & Height
 -->
 <dom-module id="taaabs-trace-timeline-container">
   <template>
+    <style include="taaabs-theme"></style>
     <style is="custom-style">
       :host {
-        display: block;
+        display: flex;
+        width: 100%;
+        flex: 1;
+        padding: 0px;
       }
       #progress {
-        width: 1400px;
+        width: 100%;
         height: 10px;
         --paper-progress-active-color: var(--paper-blue-500);
         --paper-progress-indeterminate-cycle-duration: 5s;
       }
+      #background-progress {
+        width: 100%;
+        height: 10px;
+        --paper-progress-transition-timing-function: ease;
+        --paper-progress-transition-duration: 0.25s;
+        --paper-progress-active-color: var(--paper-blue-300);
+
+      }
     </style>
-    <taaabs-trace-timeline id="timeline" style="height: 315px; width: 1400px"></taaabs-trace-timeline>
-    <taaabs-trace-timeline-scroller id="scroller" style="height: 65px; width: 1400px;"></taaabs-trace-timeline-scroller>
-    <paper-progress id="progress" indeterminate disabled></paper-progress>
+    <div class="flex-vertical flexchild">
+      <taaabs-trace-timeline class="flexchild" id="timeline"></taaabs-trace-timeline>
+      <taaabs-trace-timeline-scroller id="scroller" style="height: 65px;"></taaabs-trace-timeline-scroller>
+      <paper-progress id="progress" indeterminate disabled></paper-progress>
+      <paper-progress id="background-progress" min="0" max="100" value="0"></paper-progress>
+    </div>
   </template>
   <script>
     Polymer({
@@ -174,7 +189,29 @@ TODO: Flex Width & Height
         _secondPartEnd: {
           type: Number,
           value: 0
+        },
+
+
+        /**
+        * TRYHARD *
+        */
+
+        _downloadBuffer: {
+          type: Array,
+          value: []
+        },
+
+        _downloadPriority: {
+          type: Array,
+          value: []
+        },
+
+        _obselsCount: {
+          type: Number,
+          value: 0
         }
+
+
       },
 
       attached: function() {
@@ -189,7 +226,6 @@ TODO: Flex Width & Height
       ready: function() {},
 
       updateTimeline: function(){
-        console.log(this.stylesheet);
         this.$.timeline.redrawObsels(this._applyStyleOnObsels(this._getObselsForCurrentBounds()));
       },
 
@@ -202,12 +238,96 @@ TODO: Flex Width & Height
         // Get the begin and end of the trace.
         var b = this.traceStats['stats:minTime'];
         var e = this.traceStats['stats:maxTime'];
+        this.set('_currentBegin', b);
+        this.set('_currentEnd',   e);
         // Set the scroller vars.
-        this.$.scroller.set('begin', b);
-        this.$.scroller.set('end', e);
-        this.$.scroller.initVisu();
+        this.$.scroller.init(b, e);
         // Set the timeline vars
+        this.$.timeline.set('begin', b);
+        this.$.timeline.set('end', e);
         this.$.timeline.initVisu();
+        // While the timeline width isn't set, we wait.
+        // Then, we start the passiv download
+        var interval = setInterval(function(){
+          if(this.$.timeline._width !== 0){
+            clearInterval(interval);
+            this._startPassiveDownload();
+          }
+        }.bind(this), 500);
+      },
+
+      _startPassiveDownload: function(){
+        // Get the begin/end of the trace.
+        // Calculate the period for each obsel column
+        var b = this.traceStats['stats:minTime'];
+        var e = this.traceStats['stats:maxTime'];
+        var c = this.$.timeline._width / (this.$.timeline._obselWidth + 2);
+        var period = Math.ceil((e-b) / c);
+        this.set('_downloadPeriod', period);
+        // Create a download buffer for each column
+        for(var i = 0 ; i < c ; i++){
+          this.push('_downloadBuffer', {
+            'b': b+(period*i),
+            'e': b+(period*i)+period,
+            'isOver': false,
+            'obsels': []
+          });
+        }
+        // Start the download
+        this._launchDownload();
+      },
+
+      _launchDownload: function(){
+        // If we don't have priority downloads, we download every obsel in background.
+        if(this._downloadPriority.length === 0){
+          this.$.progress.set('disable', true);
+          // Show the passive progress bar.
+          var i = 0;
+          // If the first download campaign is over, we look for the column not complete yet.
+          // Otherwise, we look for the column visited yet.
+          // When the first campaign is over , we set `_firstDownloadDone` to true, and we _launchDownload again.
+          if(this._firstDownloadDone){
+            while(i < this._downloadBuffer.length &&
+              this._downloadBuffer[i].isOver) i++;
+          }
+          else{
+            while(i < this._downloadBuffer.length &&
+              ( this._downloadBuffer[i].isOver || this._downloadBuffer[i].obsels.length !== 0 ))
+              i++;
+            if(i >= this._downloadBuffer.length){
+              this._firstDownloadDone = true;
+              this._launchDownload();
+            }
+          }
+          // If we havan't download everyhing yet, well, we get the obsels...
+          if(i < this._downloadBuffer.length){
+            this.set('_downloadCurrentBufferIndex', i);
+            // Set time
+            var b = this.traceStats['stats:minTime'];
+            b += (i * this._downloadPeriod);
+            // Set obsel
+            var uri = null;
+            if(this._downloadBuffer[i].obsels.length > 0) uri = this._downloadBuffer[i].obsels[this._downloadBuffer[i].obsels.length - 1]['@id'];
+            if(this._firstDownloadDone)
+              this._downloadObsels(b, b + this._downloadPeriod - 1, 100, uri );
+            else
+              this._downloadObsels(b, null, 30, uri );
+          }
+        }
+        else{
+          this.$.progress.set('disable', false);
+          var i = this.splice('_downloadPriority', 0, 1);
+          while(this._downloadBuffer[i].isOver)
+            i = this.splice('_downloadPriority', 0, 1);
+            this.set('_downloadCurrentBufferIndex', i);
+            // Set time
+            var b = this.traceStats['stats:minTime'];
+            b += (i * this._downloadPeriod);
+            // Set obsel
+            var uri = null;
+            if(this._downloadBuffer[i].obsels.length > 0) uri = this._downloadBuffer[i].obsels[this._downloadBuffer[i].obsels.length - 1]['@id'];
+            this._downloadObsels(b, b + this._downloadPeriod - 1, 100, uri );
+        }
       },
 
       /**
@@ -320,6 +440,36 @@ TODO: Flex Width & Height
         return result;
       },
 
+
+      _sortObselsInBuffer: function(obs, overflow){
+        var index = this.get('_downloadCurrentBufferIndex');
+        for(var i = 0; i < obs.length; i++){
+          if(obs[i].begin >= this._downloadBuffer[index].b && obs[i].end < this._downloadBuffer[index].e){
+            this._downloadBuffer[this._downloadCurrentBufferIndex].obsels.push(obs[i]);
+          }
+          else{
+            i--;
+            this._downloadBuffer[index].isOver = true;
+            console.log('index '+index+' is over');
+            index++;
+          }
+          if(index > this._downloadBuffer.length){
+            console.log('error : Obsel couldnt fit in any buffer');
+            i = obs.length;
+          }
+        }
+        if(index !== this.get('_downloadCurrentBufferIndex')){
+          if(overflow) this._downloadBuffer[index].isOver = true;
+          if(this._downloadBuffer[index].obsels.length > 30) index++;
+          this.set('_downloadCurrentBufferIndex', index);
+        }
+        else{
+          if(overflow) this._downloadBuffer[index].isOver = true;
+          this.set('_downloadCurrentBufferIndex', index+1);
+        }
+        console.log('new index : '+this._downloadCurrentBufferIndex);
+      },
+
       /**
        * Download the obsels.
        *
@@ -328,11 +478,11 @@ TODO: Flex Width & Height
        *
        * @method _downloadObsels
        */
-      _downloadObsels: function(start, stop, limit, uri, _resolve, _reject){
-         limit = limit || 100;
+      _downloadObsels: function(start, stop, limit, uri){
+        limit = limit || 100;
          var minb  = (start) ? 'minb='+start  : '';
-         var after = (uri)   ? 'after='+uri   : '';
          var maxe  = (stop)  ? '&maxe='+stop  : '';
+         var after = (uri)   ? '&after='+uri   : '';
          var request = this.traceUri + '@obsels?'+minb+after+maxe+'&limit='+limit;
          var XMLReq = new XMLHttpRequest();
          XMLReq.open("GET", request);
@@ -343,62 +493,31 @@ TODO: Flex Width & Height
            if (XMLReq.readyState === 4) {
              if (XMLReq.status === 200 || XMLReq.status === 201 || XMLReq.status === 304) {
                var obs = (JSON.parse(XMLReq.response)).obsels;
-               for(var i = 0; i < obs.length; i++){
-                 this.push('_loadingObselsList', obs[i]);
-               }
+               console.log(obs);
+              // OLD VERSION THAT GET A SINGLE COLUMN EACH TIME
+              //  for(var i = 0; i < obs.length; i++){
+              //    this._downloadBuffer[this._downloadCurrentBufferIndex].obsels.push(obs[i]);
+              //  }
+              //  if(obs.length < 100){
+              //    console.log('column over');
+              //    this._downloadBuffer[this._downloadCurrentBufferIndex].isOver = true;
+              //  }
+               this._sortObselsInBuffer(obs, (obs.length < limit));
+               this.set('_obselsCount', this.get('_obselsCount') + obs.length);
+               var progress = Math.floor( this.get('_obselsCount') / this.traceStats['stats:obselCount'] * 100 );
+               this.$['background-progress'].set('value', progress);
+               this._launchDownload();
                this.$.timeline.addObsels(this._applyStyleOnObsels(obs));
-               if(obs.length > 0){
-                 this._downloadObsels( null, stop, limit, obs[obs.length - 1]['@id']);
-               } else {
-                 this._handleDownloadResults();
-               }
              } else {
-               _reject(XMLReq);
+               console.log(XMLReq);
              }
            }
          }.bind(this);
          XMLReq.onerror = function(err) {
-           reject(err);
+           console.log(err);
          };
          XMLReq.send(null);
-
-       },
-
-       /**
-        * Called after a download, to fill `_obselsList`
-        *
-        * @method _handleDownloadResults
-        */
-       _handleDownloadResults: function(){
-         if(this._downloadType === 'FIRST'){
-           this.set('_obselsList', this.get('_loadingObselsList'));
-           this.set('_loadingObselsList', []);
-           this.set('_minBegin', this.get('_currentBegin'));
-           this.set('_maxEnd',   this.get('_currentEnd'));
-           this.$.progress.set('disabled', true);
-           this._launchLoadingProcess();
-         }
-         else if(this._downloadType === 'BEFORE'){
-           this.set('_obselsList', this.get('_loadingObselsList').concat(this.get('_obselsList')));
-           this.set('_loadingObselsList', []);
-           this.set('_minBegin', this.get('_currentBegin'));
-           if(this._currentEnd > this._maxEnd){
-             this.set('_downloadType', 'AFTER');
-             this._downloadObsels(this._maxEnd, this._currentEnd);
-           }
-           else{
-             this.$.progress.set('disabled', true);
-             this._launchLoadingProcess();
-           }
-         }
-         else if(this._downloadType === 'AFTER'){
-           this.set('_maxEnd', this.get('_currentEnd'));
-           this.set('_obselsList', (this.get('_obselsList')).concat(this.get('_loadingObselsList')));
-           this.set('_loadingObselsList', []);
-           this.$.progress.set('disabled', true);
-           this._launchLoadingProcess();
-         }
-       },
+      },
 
        /**
         * Download the obsels.
@@ -453,39 +572,18 @@ TODO: Flex Width & Height
          this._launchLoadingProcess();
        },
 
-       _launchLoadingProcess: function(){
-         console.log('_launchLoadingProcess : ');
-         if(this._loadingProcessList.length > 0){
-           var p = this.splice('_loadingProcessList', 0, 1)[0];
-           console.log('   p : ');
-           console.log(p);
-           switch(p.type){
-             case 'timeline-scoller-shift':
-              this._loadTimelineScrollerShift(p);
-             break;
-             case 'timeline-scroller-new-bounds':
-              this._loadTimelineScrollerNewBounds(p);
-             break;
-             case 'timeline-interval-selected':
-              this._loadTimelineIntervalSelected(p);
-             break;
-           }
-         }
-         else{
-           console.log('end launching');
-           this.set('_isProcessLaunched', false);
-         }
-       },
-
 
        _getObselsForCurrentBounds: function(b, e){
          b = b || this._currentBegin;
          e = e || this._currentEnd;
+         var ib = Math.floor((b-this.traceStats['stats:minTime'])/this._downloadPeriod);
+         var eb = Math.ceil((e-this.traceStats['stats:minTime']-this._downloadPeriod+1)/this._downloadPeriod);
          var obs = [];
-         for(var i = 0; i < this._obselsList.length; i++){
-           // TODO Get this more opti.
-           if(this._obselsList[i].begin >= b && this._obselsList[i].end <= e){
-             obs.push(this._obselsList[i])
+         for(var i = ib; i <= eb; i++){
+           for(var j = 0; j < this._downloadBuffer[i].obsels.length; j++){
+             if(this._downloadBuffer[i].obsels[j].begin >= b && this._downloadBuffer[i].obsels[j].end <= e){
+               obs.push(this._downloadBuffer[i].obsels[j])
+             }
            }
          }
          return obs;
@@ -543,6 +641,16 @@ TODO: Flex Width & Height
         }
       },
 
+      _isNotDownloaded: function(b, e){
+        var ib = Math.floor((b-this.traceStats['stats:minTime'])/this._downloadPeriod);
+        var eb = Math.ceil((e-this.traceStats['stats:minTime']-this._downloadPeriod+1)/this._downloadPeriod);
+        var result = [];
+        for(var i = ib; i <= eb; i++){
+          if(!this._downloadBuffer[i].isOver)result.push(i);
+        }
+        return result;
+      },
+
       /**
        * Calls `_onScrollerNewBounds`.
        *
@@ -551,30 +659,29 @@ TODO: Flex Width & Height
        * @method _onTimelineScrollerNewBounds
        */
       _onTimelineScrollerNewBounds: function(evt){
-        // Push the new loading process in the waiting line.
-        this.push('_loadingProcessList', {
-          'type'         : 'timeline-scroller-new-bounds',
-          'overall_begin': evt.detail.b,
-          'overall_end'  : evt.detail.e
-        });
-        // Launch the download process.
-        if(!this._isProcessLaunched){
-          this.set('_isProcessLaunched', true);
-          this._launchLoadingProcess();
+        var b = ( evt.detail.b < this.traceStats['stats:minTime']) ? this.traceStats['stats:minTime'] : evt.detail.b;
+        var e = ( evt.detail.e > this.traceStats['stats:maxTime']) ? this.traceStats['stats:maxTime'] : evt.detail.e;
+        this.set('_currentBegin',b);
+        this.set('_currentEnd',  e);
+        if(this._isNotDownloaded(b,e).length === 0){
+          this.$.timeline.setTemporalBounds(b,e);
+          this.$.timeline.addObsels(this._applyStyleOnObsels(this._getObselsForCurrentBounds()));
+        }
+        else{
+          this.set('_downloadPriority', this._isNotDownloaded(b,e));
         }
       },
 
       _onTimelineIntervalSelected: function(evt){
-        // Push the new loading process in the waiting line.
-        this.push('_loadingProcessList', {
-          'type'         : 'timeline-interval-selected',
-          'overall_begin': evt.detail.b,
-          'overall_end'  : evt.detail.e
-        });
-        // Launch the download process.
-        if(!this._isProcessLaunched){
-          this.set('_isProcessLaunched', true);
-          this._launchLoadingProcess();
+        var b = ( evt.detail.b < this.traceStats['stats:minTime']) ? this.traceStats['stats:minTime'] : evt.detail.b;
+        var e = ( evt.detail.e > this.traceStats['stats:maxTime']) ? this.traceStats['stats:maxTime'] : evt.detail.e;
+        this.set('_currentBegin',b);
+        this.set('_currentEnd',  e);
+        if(this._isDownloaded(b,e).length === 0){
+          this.$.timeline.addObsels(this._applyStyleOnObsels(this._getObselsForCurrentBounds()));
+        }
+        else{
+          this.set('_downloadPriority', this._isNotDownloaded(b,e));
         }
       }
 
