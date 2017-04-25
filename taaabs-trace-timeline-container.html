@@ -243,8 +243,7 @@ TODO: Flex Width & Height
         // Set the scroller vars.
         this.$.scroller.init(b, e);
         // Set the timeline vars
-        this.$.timeline.set('begin', b);
-        this.$.timeline.set('end', e);
+        this.$.timeline.setTemporalBounds(b, e);
         this.$.timeline.initVisu();
         // While the timeline width isn't set, we wait.
         // Then, we start the passiv download
