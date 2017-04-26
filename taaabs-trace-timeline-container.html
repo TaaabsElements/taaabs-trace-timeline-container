@@ -225,6 +225,11 @@ TODO: Flex Width & Height
 
       ready: function() {},
 
+      /**
+       * Redraw the obsels with every obsel between `_currentBegin` and `_currentEnd`.
+       *
+       * @method updateTimeline
+       */
       updateTimeline: function(){
         this.$.timeline.redrawObsels(this._applyStyleOnObsels(this._getObselsForCurrentBounds()));
       },
@@ -255,6 +260,12 @@ TODO: Flex Width & Height
         }.bind(this), 500);
       },
 
+      /**
+       * Create the `_downloadBuffer` for every column of obsel.
+       * Calls `_launchDownload`.
+       *
+       * @method _startPassiveDownload
+       */
       _startPassiveDownload: function(){
         // Get the begin/end of the trace.
         // Calculate the period for each obsel column
@@ -276,6 +287,11 @@ TODO: Flex Width & Height
         this._launchDownload();
       },
 
+      /**
+       * Start a download of obsels. If there are some priority downlaod to do, download them first.
+       *
+       * @method _launchDownload
+       */
       _launchDownload: function(){
         // If we don't have priority downloads, we download every obsel in background.
         if(this._downloadPriority.length === 0){
@@ -318,16 +334,127 @@ TODO: Flex Width & Height
           var i = this.splice('_downloadPriority', 0, 1);
           while(this._downloadBuffer[i].isOver)
             i = this.splice('_downloadPriority', 0, 1);
-            this.set('_downloadCurrentBufferIndex', i);
-            // Set time
-            var b = this.traceStats['stats:minTime'];
-            b += (i * this._downloadPeriod);
-            // Set obsel
-            var uri = null;
-            if(this._downloadBuffer[i].obsels.length > 0) uri = this._downloadBuffer[i].obsels[this._downloadBuffer[i].obsels.length - 1]['@id'];
-            this._downloadObsels(b, b + this._downloadPeriod - 1, 100, uri );
+          this.set('_downloadCurrentBufferIndex', i);
+          // Set time
+          var b = this.traceStats['stats:minTime'];
+          b += (i * this._downloadPeriod);
+          // Set obsel
+          var uri = null;
+          if(this._downloadBuffer[i].obsels.length > 0) uri = this._downloadBuffer[i].obsels[this._downloadBuffer[i].obsels.length - 1]['@id'];
+          this._downloadObsels(b, b + this._downloadPeriod - 1, 100, uri );
         }
       },
+
+      /**
+       * Download the obsels.
+       *
+       * @param {!optionnal} start (Number) The begin time of the interval to download.
+       * @param {!optionnal} stop (Number) The end time of the interval to download.
+       * @param {!optionnal} limit (Number) Max count of obsel to download.
+       * @param {!optionnal} uri (Number) Uri of the start obsel.
+       *
+       * @method _downloadObsels
+       */
+      _downloadObsels: function(start, stop, limit, uri){
+        limit = limit || 100;
+        var minb  = (start) ? 'minb='+start  : '';
+        var maxe  = (stop)  ? '&maxe='+stop  : '';
+        var after = (uri)   ? '&after='+uri   : '';
+        var request = this.traceUri + '@obsels?'+minb+after+maxe+'&limit='+limit;
+        var XMLReq = new XMLHttpRequest();
+        XMLReq.open("GET", request);
+        XMLReq.setRequestHeader('Content-Type', 'application/json');
+        XMLReq.setRequestHeader('Accept', 'application/ld+json');
+        XMLReq.withCredentials = true;
+        XMLReq.onreadystatechange = function() {
+         if (XMLReq.readyState === 4) {
+           if (XMLReq.status === 200 || XMLReq.status === 201 || XMLReq.status === 304) {
+             this._handleDownloadObselResponse(XMLReq.response, limit);
+           } else {
+             console.log(XMLReq);
+           }
+         }
+        }.bind(this);
+        XMLReq.onerror = function(err) {
+         console.log(err);
+        };
+        XMLReq.send(null);
+      },
+
+      /**
+       * Handle the download response. Sort the obsels in the `_downloadBuffer`.
+       * Call `_launchDownload`.
+       * Send the obsels to the timeline.
+       *
+       * @param {!required} response {Object} The response of the query.
+       *
+       * @method _handleDownloadObselResponse
+       */
+      _handleDownloadObselResponse: function(response, limit){
+        // Parse the obsels array
+        var obs = (JSON.parse(response)).obsels;
+        // Sort the obsels in the download buffer.
+        this._sortObselsInBuffer(obs, (obs.length < limit));
+        // Update the background-progress status
+        this._updateBackgroundProgress(obs.length);
+        // Relaunch the download.
+        this._launchDownload();
+        // Update the timeline obsels.
+        this.$.timeline.addObsels(this._applyStyleOnObsels(obs));
+      },
+
+      /**
+       * Upadte the `background-progress` status.
+       *
+       * @param {!required} count {Number} The number of obsels downloaded.
+       *
+       * @method _updateBackgroundProgress
+       */
+      _updateBackgroundProgress: function(count) {
+        this.set('_obselsCount', this.get('_obselsCount') + count);
+        var progress = Math.floor( this.get('_obselsCount') / this.traceStats['stats:obselCount'] * 100 );
+        this.$['background-progress'].set('value', progress);
+      },
+
+
+      /**
+       * Sort the obsels downloaded ine hte `_downloadBuffer`.
+       *
+       * @param {!required} obs {Array} List of obsel to sort in the `_downloadBuffer`.
+       * @param {!required} overflow {Boolean} True if the request retrieve less obsels than the limit. This would mean that the corresponding obsel column is completly downloaded.
+       *
+       * @method _sortObselsInBuffer
+       */
+      _sortObselsInBuffer: function(obs, overflow){
+        var index = this.get('_downloadCurrentBufferIndex');
+        // For each obsels in obs, if it fit in a column, we add it to the column.
+        // If it doesn't fit, we set the column as "over" and increment the column position.
+        for(var i = 0; i < obs.length; i++){
+          if(obs[i].begin >= this._downloadBuffer[index].b && obs[i].end < this._downloadBuffer[index].e){
+            this._downloadBuffer[this._downloadCurrentBufferIndex].obsels.push(obs[i]);
+          }
+          else{
+            i--;
+            this._downloadBuffer[index].isOver = true;
+            index++;
+          }
+          // Security condition, to avoid overflow.
+          if(index > this._downloadBuffer.length){
+            i = obs.length;
+          }
+        }
+        // If we switched of obsel column
+        if(index !== this.get('_downloadCurrentBufferIndex')){
+          if(overflow) this._downloadBuffer[index].isOver = true;
+          if(this._downloadBuffer[index].obsels.length > 30) index++;
+          this.set('_downloadCurrentBufferIndex', index);
+        }
+        else{
+          if(overflow) this._downloadBuffer[index].isOver = true;
+          this.set('_downloadCurrentBufferIndex', index+1);
+        }
+      },
+
 
       /**
        * Set the symbol of a list of obsels according to the `stylesheet`.
@@ -404,30 +531,18 @@ TODO: Flex Width & Height
               }
             }
           }
+          // Sort the valid symbl list according to their priority.
+          // type > attribute > position in rules.
           t.sort(function(a, b) {
             if(a.t === b.t){
-              if(a.a === b.a){
-                if(a.i > b.i){
-                  return 1;
-                }
-                else{
-                  return -1;
-                }
-              }
-              else if(a.a > b.a){
-                return -1;
-              }
-              else{
-                return 1;
-              }
+              if     (a.a === b.a) return (a.i > b.i) ? 1 : -1;
+              else if(a.a > b.a)   return -1;
+              else return 1;
             }
-            else if(a.t > b.t){
-              return -1;
-            }
-            else{
-              return 1;
-            }
+            else if(a.t > b.t) return -1;
+            else return 1;
           });
+          // If the rule as a type and an attribute, we push the obsel to the result list.
           if(t[0].a !== 0 || t[0].t !== 0)[
             result.push({
               'obsel': list[i],
@@ -439,154 +554,93 @@ TODO: Flex Width & Height
         return result;
       },
 
-
-      _sortObselsInBuffer: function(obs, overflow){
-        var index = this.get('_downloadCurrentBufferIndex');
-        for(var i = 0; i < obs.length; i++){
-          if(obs[i].begin >= this._downloadBuffer[index].b && obs[i].end < this._downloadBuffer[index].e){
-            this._downloadBuffer[this._downloadCurrentBufferIndex].obsels.push(obs[i]);
-          }
-          else{
-            i--;
-            this._downloadBuffer[index].isOver = true;
-            console.log('index '+index+' is over');
-            index++;
-          }
-          if(index > this._downloadBuffer.length){
-            console.log('error : Obsel couldnt fit in any buffer');
-            i = obs.length;
-          }
+      /**
+       * Retrieve some obsels from `_downloadBuffer` between a begin time and an end time.
+       *
+       * @param {!optionnal} b {Number} The begin time of the obsels to retrieve from `_downloadBuffer`.
+       * @param {!optionnal} e {Number} The end   time of the obsels to retrieve from `_downloadBuffer`.
+       *
+       * @method _getObselsForCurrentBounds
+       */
+      _getObselsForCurrentBounds: function(b, e){
+        // Set the begin & end
+        b = b || this._currentBegin;
+        e = e || this._currentEnd;
+        // Get the begin & end index position in the `_downloadBuffer` columns.
+        var ib = Math.floor((b-this.traceStats['stats:minTime'])/this._downloadPeriod);
+        var eb = Math.ceil((e-this.traceStats['stats:minTime']-this._downloadPeriod+1)/this._downloadPeriod);
+        // Fill obs with the matching obsels.
+        var obs = [];
+        for(var i = ib; i <= eb; i++){
+         for(var j = 0; j < this._downloadBuffer[i].obsels.length; j++){
+           if(this._downloadBuffer[i].obsels[j].begin >= b && this._downloadBuffer[i].obsels[j].end <= e){
+             obs.push(this._downloadBuffer[i].obsels[j])
+           }
+         }
         }
-        if(index !== this.get('_downloadCurrentBufferIndex')){
-          if(overflow) this._downloadBuffer[index].isOver = true;
-          if(this._downloadBuffer[index].obsels.length > 30) index++;
-          this.set('_downloadCurrentBufferIndex', index);
-        }
-        else{
-          if(overflow) this._downloadBuffer[index].isOver = true;
-          this.set('_downloadCurrentBufferIndex', index+1);
-        }
-        console.log('new index : '+this._downloadCurrentBufferIndex);
+        return obs;
       },
 
       /**
-       * Download the obsels.
+       * Check is the columns of `_downloadBuffer` between a begin and an end are already downloaded.
+       * Returns an Array of index of the columns which need to be download. The Array is empty if there's no need to download.
        *
-       * @param {!required} start (Number) The begin time of the interval to download.
-       * @param {!required} stop (Number) The end time of the interval to download.
+       * @param {!required} b {Number} The begin time of the column to check.
+       * @param {!required} e {Number} The end   time of the column to check.
        *
-       * @method _downloadObsels
+       * @method _isNotDownloaded
        */
-      _downloadObsels: function(start, stop, limit, uri){
-        limit = limit || 100;
-         var minb  = (start) ? 'minb='+start  : '';
-         var maxe  = (stop)  ? '&maxe='+stop  : '';
-         var after = (uri)   ? '&after='+uri   : '';
-         var request = this.traceUri + '@obsels?'+minb+after+maxe+'&limit='+limit;
-         var XMLReq = new XMLHttpRequest();
-         XMLReq.open("GET", request);
-         XMLReq.setRequestHeader('Content-Type', 'application/json');
-         XMLReq.setRequestHeader('Accept', 'application/ld+json');
-         XMLReq.withCredentials = true;
-         XMLReq.onreadystatechange = function() {
-           if (XMLReq.readyState === 4) {
-             if (XMLReq.status === 200 || XMLReq.status === 201 || XMLReq.status === 304) {
-               var obs = (JSON.parse(XMLReq.response)).obsels;
-               console.log(obs);
-              // OLD VERSION THAT GET A SINGLE COLUMN EACH TIME
-              //  for(var i = 0; i < obs.length; i++){
-              //    this._downloadBuffer[this._downloadCurrentBufferIndex].obsels.push(obs[i]);
-              //  }
-              //  if(obs.length < 100){
-              //    console.log('column over');
-              //    this._downloadBuffer[this._downloadCurrentBufferIndex].isOver = true;
-              //  }
-               this._sortObselsInBuffer(obs, (obs.length < limit));
-               this.set('_obselsCount', this.get('_obselsCount') + obs.length);
-               var progress = Math.floor( this.get('_obselsCount') / this.traceStats['stats:obselCount'] * 100 );
-               this.$['background-progress'].set('value', progress);
-               this._launchDownload();
-               this.$.timeline.addObsels(this._applyStyleOnObsels(obs));
-             } else {
-               console.log(XMLReq);
-             }
-           }
-         }.bind(this);
-         XMLReq.onerror = function(err) {
-           console.log(err);
-         };
-         XMLReq.send(null);
+      _isNotDownloaded: function(b, e){
+        // Get the begin & end index position in the `_downloadBuffer` columns.
+        var ib = Math.floor((b-this.traceStats['stats:minTime'])/this._downloadPeriod);
+        var eb = Math.ceil((e-this.traceStats['stats:minTime']-this._downloadPeriod+1)/this._downloadPeriod);
+        // Fill the result Array with the columns not over.
+        var result = [];
+        for(var i = ib; i <= eb; i++){
+          if(!this._downloadBuffer[i].isOver)result.push(i);
+        }
+        return result;
       },
 
-       /**
-        * Download the obsels.
-        *
-        * @param {!required} begin (Number) The begin time of the selected interval.
-        * @param {!required} end (Number) The end time of the selected interval.
-        *
-        * @method _loadTimelineScrollerNewBounds
-        */
-       _loadTimelineScrollerNewBounds: function(process){
-         this.set('_currentBegin', process.overall_begin);
-         this.set('_currentEnd'  , process.overall_end  );
-         this.$.timeline.setTemporalBounds(this._currentBegin, this._currentEnd);
-         // If the chosen interval have not been downloaded yet, we download it.
-         // Otherwise, we just display the obsels downloaded.
-         if(this._obselsList.length === 0){
-           this.$.progress.set('disabled', false);
-           this.set('_downloadType', 'FIRST');
-           this._downloadObsels(this._currentBegin, this._currentEnd);
-         }
-         else{
-           if(this._currentBegin < this._minBegin){
-             this.$.progress.set('disabled', false);
-             this.set('_downloadType', 'BEFORE');
-             this._downloadObsels(this._currentBegin, this._minBegin);
-           }
-           else if(this._currentEnd > this._maxEnd){
-             this.$.progress.set('disabled', false);
-             this.set('_downloadType', 'AFTER');
-             this._downloadObsels(this._maxEnd, this._currentEnd);
-           }
-           else{
-             this._launchLoadingProcess();
-           }
-           var obs = [];
-           for(var i = 0; i < this._obselsList.length; i++){
-             // TODO Get this more opti
-             if(this._obselsList[i].begin >= this._currentBegin && this._obselsList[i].end <= this._currentEnd){
-               obs.push(this._obselsList[i])
-             }
-           }
-           this.$.timeline.addObsels(this._applyStyleOnObsels(obs));
-         }
-       },
+      /**
+       * TODO.
+       *
+       * @param {!required} evt (Event) The `timeline-scroller-new-bounds` event.
+       *
+       * @method _onTimelineScrollerNewBounds
+       */
+      _onTimelineScrollerNewBounds: function(evt){
+        var b = ( evt.detail.b < this.traceStats['stats:minTime']) ? this.traceStats['stats:minTime'] : evt.detail.b;
+        var e = ( evt.detail.e > this.traceStats['stats:maxTime']) ? this.traceStats['stats:maxTime'] : evt.detail.e;
+        this.set('_currentBegin',b);
+        this.set('_currentEnd',  e);
+        this.$.timeline.setTemporalBounds(b,e);
+        this.$.timeline.addObsels(this._applyStyleOnObsels(this._getObselsForCurrentBounds()));
+        if(this._isNotDownloaded(b,e).length !== 0){
+          this.set('_downloadPriority', this._isNotDownloaded(b,e));
+        }
+      },
 
-       _loadTimelineIntervalSelected: function(process){
-         this.set('_currentBegin', process.overall_begin);
-         this.set('_currentEnd'  , process.overall_end  );
-         this.$.timeline.setTemporalBounds(this._currentBegin, this._currentEnd);
-         this.$.timeline.addObsels(this._applyStyleOnObsels(this._getObselsForCurrentBounds()));
-         this.$.scroller.updateVisu(this._currentBegin, this._currentEnd);
-         this._launchLoadingProcess();
-       },
+      /**
+       * TODO.
+       *
+       * @param {!required} evt (Event) The `timeline-scroller-new-bounds` event.
+       *
+       * @method _onTimelineIntervalSelected
+       */
+      _onTimelineIntervalSelected: function(evt){
+        var b = ( evt.detail.b < this.traceStats['stats:minTime']) ? this.traceStats['stats:minTime'] : evt.detail.b;
+        var e = ( evt.detail.e > this.traceStats['stats:maxTime']) ? this.traceStats['stats:maxTime'] : evt.detail.e;
+        this.set('_currentBegin',b);
+        this.set('_currentEnd',  e);
+        if(this._isDownloaded(b,e).length === 0){
+          this.$.timeline.addObsels(this._applyStyleOnObsels(this._getObselsForCurrentBounds()));
+        }
+        else{
+          this.set('_downloadPriority', this._isNotDownloaded(b,e));
+        }
+      },
 
-
-       _getObselsForCurrentBounds: function(b, e){
-         b = b || this._currentBegin;
-         e = e || this._currentEnd;
-         var ib = Math.floor((b-this.traceStats['stats:minTime'])/this._downloadPeriod);
-         var eb = Math.ceil((e-this.traceStats['stats:minTime']-this._downloadPeriod+1)/this._downloadPeriod);
-         var obs = [];
-         for(var i = ib; i <= eb; i++){
-           for(var j = 0; j < this._downloadBuffer[i].obsels.length; j++){
-             if(this._downloadBuffer[i].obsels[j].begin >= b && this._downloadBuffer[i].obsels[j].end <= e){
-               obs.push(this._downloadBuffer[i].obsels[j])
-             }
-           }
-         }
-         return obs;
-       },
 
        _loadTimelineScrollerShift: function(process){
          // Set the new bounds
@@ -640,49 +694,9 @@ TODO: Flex Width & Height
         }
       },
 
-      _isNotDownloaded: function(b, e){
-        var ib = Math.floor((b-this.traceStats['stats:minTime'])/this._downloadPeriod);
-        var eb = Math.ceil((e-this.traceStats['stats:minTime']-this._downloadPeriod+1)/this._downloadPeriod);
-        var result = [];
-        for(var i = ib; i <= eb; i++){
-          if(!this._downloadBuffer[i].isOver)result.push(i);
-        }
-        return result;
-      },
 
-      /**
-       * Calls `_onScrollerNewBounds`.
-       *
-       * @param {!required} evt (Event) The `timeline-scroller-new-bounds` event.
-       *
-       * @method _onTimelineScrollerNewBounds
-       */
-      _onTimelineScrollerNewBounds: function(evt){
-        var b = ( evt.detail.b < this.traceStats['stats:minTime']) ? this.traceStats['stats:minTime'] : evt.detail.b;
-        var e = ( evt.detail.e > this.traceStats['stats:maxTime']) ? this.traceStats['stats:maxTime'] : evt.detail.e;
-        this.set('_currentBegin',b);
-        this.set('_currentEnd',  e);
-        if(this._isNotDownloaded(b,e).length === 0){
-          this.$.timeline.setTemporalBounds(b,e);
-          this.$.timeline.addObsels(this._applyStyleOnObsels(this._getObselsForCurrentBounds()));
-        }
-        else{
-          this.set('_downloadPriority', this._isNotDownloaded(b,e));
-        }
-      },
 
-      _onTimelineIntervalSelected: function(evt){
-        var b = ( evt.detail.b < this.traceStats['stats:minTime']) ? this.traceStats['stats:minTime'] : evt.detail.b;
-        var e = ( evt.detail.e > this.traceStats['stats:maxTime']) ? this.traceStats['stats:maxTime'] : evt.detail.e;
-        this.set('_currentBegin',b);
-        this.set('_currentEnd',  e);
-        if(this._isDownloaded(b,e).length === 0){
-          this.$.timeline.addObsels(this._applyStyleOnObsels(this._getObselsForCurrentBounds()));
-        }
-        else{
-          this.set('_downloadPriority', this._isNotDownloaded(b,e));
-        }
-      }
+
 
     });
   </script>
