@@ -209,6 +209,11 @@ TODO: Flex Width & Height
         _obselsCount: {
           type: Number,
           value: 0
+        },
+
+        boundStylesheetComponent: {
+          type: Object,
+          value: null
         }
 
 
@@ -232,6 +237,36 @@ TODO: Flex Width & Height
        */
       updateTimeline: function(){
         this.$.timeline.redrawObsels(this._applyStyleOnObsels(this._getObselsForCurrentBounds()));
+        this.updateStylesheetCount();
+      },
+
+      updateStylesheetCount: function(){
+        if(this.boundStylesheetComponent !== null){
+          var matchs = [];
+          for(var i = 0; i < this.stylesheet.rules.length; i++)
+            matchs.push({
+              'local':   0,
+              'overall': 0
+            });
+          if(this.$['background-progress'].value === 100){
+            console.log('full');
+            var obs = this._getObselsForCurrentBounds(this.traceStats['stats:minTime'], this.traceStats['stats:maxTime']);
+            console.log(obs.length);
+            for(var i = 0; i < obs.length; i++){
+              var index = this._getObselStyle(obs[i]);
+              if(i !== -1){
+                matchs[index].overall += 1;
+                if(this._currentBegin <= obs[i].begin && obs[i].end <= this._currentEnd){
+                  matchs[index].local += 1;
+                }
+              }
+            }
+          }
+          else{
+            console.log('not full');
+          }
+          this.boundStylesheetComponent.updateStylesheetCount(matchs);
+        }
       },
 
       /**
@@ -430,8 +465,8 @@ TODO: Flex Width & Height
         // For each obsels in obs, if it fit in a column, we add it to the column.
         // If it doesn't fit, we set the column as "over" and increment the column position.
         for(var i = 0; i < obs.length; i++){
-          if(obs[i].begin >= this._downloadBuffer[index].b && obs[i].end < this._downloadBuffer[index].e){
-            this._downloadBuffer[this._downloadCurrentBufferIndex].obsels.push(obs[i]);
+          if(this._downloadBuffer[index].b <= obs[i].begin  && obs[i].end < this._downloadBuffer[index].e){
+            this._downloadBuffer[index].obsels.push(obs[i]);
           }
           else{
             i--;
@@ -467,91 +502,104 @@ TODO: Flex Width & Height
       _applyStyleOnObsels: function(list){
         var result = [];
         var r = this.stylesheet.rules;
-        var t = [];
         // For every obsels, sort the list of rule following :
         // number of type prior number of attribute prior index of rule.
         for(var i = 0; i < list.length; i++){
-          t = [];
-          var o = {};
-          for(var j = 0; j < r.length; j++){
-            o = {'id': j.id, 'i': j, 't': 0, 'a': 0};
-            var tan = 0;
-            for(var k = 0; k < r[j].rules.length; k++){
-              var doNotMatch = false;
-              if(r[j].rules[k].type !== ""){
-                if(list[i]['@type'] === r[j].rules[k].type.replace(this.trace.model_uri+"#", 'm:')){
-                  o.t = 1;
-                }
-                else{
-                  doNotMatch = true;
-                }
+          var index = this._getObselStyle(list[i]);
+          // If the rule as a type and an attribute, we push the obsel to the result list.
+          if(index !== -1){
+            result.push({
+              'obsel': list[i],
+              'symbol': r[index].symbol,
+              'visible': r[index].visible
+            })
+          }
+        }
+        return result;
+      },
+
+      /**
+       * Return the index of the matching style of an obsel.
+       *
+       * @param {!required} obsel {String} The obsel.
+       *
+       * @method _getObselStyle
+       */
+      _getObselStyle: function(obsel) {
+        var r = this.stylesheet.rules;
+        t = [];
+        var o = {};
+        for(var j = 0; j < r.length; j++){
+          o = {'i': j, 't': 0, 'a': 0};
+          var tan = 0;
+          for(var k = 0; k < r[j].rules.length; k++){
+            var doNotMatch = false;
+            if(r[j].rules[k].type !== ""){
+              if(obsel['@type'] === r[j].rules[k].type.replace(this.trace.model_uri+"#", 'm:')){
+                o.t = 1;
               }
-              if(!doNotMatch){
-                for(var l = 0; l < r[j].rules[k].attributes.length; l++){
-                  if(list[i][r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')] !== undefined &&
-                  list[i][r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')] !== null){
-                    switch(r[j].rules[k].attributes[l].operator){
-                      case "==":
-                        if(list[i][r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')] == r[j].rules[k].attributes[l].value){
-                          o.a += 1;
-                        }
-                        else doNotMatch = true;
-                      break;
-                      case ">":
-                        if(Number(list[i][r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')]) > Number(r[j].rules[k].attributes[l].value)){
-                          o.a += 1;
-                        }
-                        else doNotMatch = true;
-                      break;
-                      case ">=":
-                        if(Number(list[i][r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')]) >= Number(r[j].rules[k].attributes[l].value)){
-                          o.a += 1;
-                        }
-                        else doNotMatch = true;
-                      break;
-                      case "<":
-                        if(Number(list[i][r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')]) < Number(r[j].rules[k].attributes[l].value)){
-                          o.a += 1;
-                        }
-                        else doNotMatch = true;
-                      break;
-                      case "<=":
-                        if(Number(list[i][r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')]) <= Number(r[j].rules[k].attributes[l].value)){
-                          o.a += 1;
-                        }
-                        else doNotMatch = true;
-                      break;
-                    }
+              else{
+                doNotMatch = true;
+              }
+            }
+            if(!doNotMatch){
+              for(var l = 0; l < r[j].rules[k].attributes.length; l++){
+                if(obsel[r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')] !== undefined &&
+                obsel[r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')] !== null){
+                  switch(r[j].rules[k].attributes[l].operator){
+                    case "==":
+                      if(obsel[r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')] == r[j].rules[k].attributes[l].value){
+                        o.a += 1;
+                      }
+                      else doNotMatch = true;
+                    break;
+                    case ">":
+                      if(Number(obsel[r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')]) > Number(r[j].rules[k].attributes[l].value)){
+                        o.a += 1;
+                      }
+                      else doNotMatch = true;
+                    break;
+                    case ">=":
+                      if(Number(obsel[r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')]) >= Number(r[j].rules[k].attributes[l].value)){
+                        o.a += 1;
+                      }
+                      else doNotMatch = true;
+                    break;
+                    case "<":
+                      if(Number(obsel[r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')]) < Number(r[j].rules[k].attributes[l].value)){
+                        o.a += 1;
+                      }
+                      else doNotMatch = true;
+                    break;
+                    case "<=":
+                      if(Number(obsel[r[j].rules[k].attributes[l].uri.replace(this.trace.model_uri+"#", 'm:')]) <= Number(r[j].rules[k].attributes[l].value)){
+                        o.a += 1;
+                      }
+                      else doNotMatch = true;
+                    break;
                   }
                 }
               }
-              if(!doNotMatch) t.push(o);
-              else{
-                t.push({'id': j.id, 'i': j, 't': 0, 'a': 0});
-              }
+            }
+            if(!doNotMatch) t.push(o);
+            else{
+              t.push({'i': j, 't': 0, 'a': 0});
             }
           }
-          // Sort the valid symbl list according to their priority.
-          // type > attribute > position in rules.
-          t.sort(function(a, b) {
-            if(a.t === b.t){
-              if     (a.a === b.a) return (a.i > b.i) ? 1 : -1;
-              else if(a.a > b.a)   return -1;
-              else return 1;
-            }
-            else if(a.t > b.t) return -1;
-            else return 1;
-          });
-          // If the rule as a type and an attribute, we push the obsel to the result list.
-          if(t[0].a !== 0 || t[0].t !== 0)[
-            result.push({
-              'obsel': list[i],
-              'symbol': r[t[0].i].symbol,
-              'visible': r[t[0].i].visible
-            })
-          ]
         }
-        return result;
+        // Sort the valid symbl list according to their priority.
+        // type > attribute > position in rules.
+        t.sort(function(a, b) {
+          if(a.t === b.t){
+            if     (a.a === b.a) return (a.i > b.i) ? 1 : -1;
+            else if(a.a > b.a)   return -1;
+            else return 1;
+          }
+          else if(a.t > b.t) return -1;
+          else return 1;
+        });
+        if(t[0].a !== 0 || t[0].t !== 0) return t[0].i;
+        else return -1;
       },
 
       /**
