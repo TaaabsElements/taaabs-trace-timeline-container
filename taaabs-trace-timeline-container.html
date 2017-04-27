@@ -248,23 +248,20 @@ TODO: Flex Width & Height
               'local':   0,
               'overall': 0
             });
-          if(this.$['background-progress'].value === 100){
-            console.log('full');
-            var obs = this._getObselsForCurrentBounds(this.traceStats['stats:minTime'], this.traceStats['stats:maxTime']);
-            console.log(obs.length);
-            for(var i = 0; i < obs.length; i++){
-              var index = this._getObselStyle(obs[i]);
-              if(i !== -1){
-                matchs[index].overall += 1;
-                if(this._currentBegin <= obs[i].begin && obs[i].end <= this._currentEnd){
-                  matchs[index].local += 1;
-                }
+
+          var obs = this._getObselsForCurrentBounds(this.traceStats['stats:minTime'], this.traceStats['stats:maxTime']);
+          for(var i = 0; i < obs.length; i++){
+            var index = this._getObselStyle(obs[i]);
+            if(index !== -1){
+              matchs[index].overall += 1;
+              if(this._currentBegin <= obs[i].begin && obs[i].end <= this._currentEnd){
+                matchs[index].local += 1;
               }
             }
           }
-          else{
-            console.log('not full');
-          }
+          if(this.$['background-progress'].value !== 100)
+            for(var i = 0; i < this.stylesheet.rules.length; i++)
+              matchs[i].overall = '???';
           this.boundStylesheetComponent.updateStylesheetCount(matchs);
         }
       },
@@ -328,6 +325,7 @@ TODO: Flex Width & Height
        * @method _launchDownload
        */
       _launchDownload: function(){
+        this.updateStylesheetCount();
         // If we don't have priority downloads, we download every obsel in background.
         if(this._downloadPriority.length === 0){
           this.$.progress.set('disable', true);
@@ -667,6 +665,7 @@ TODO: Flex Width & Height
         if(this._isNotDownloaded(b,e).length !== 0){
           this.set('_downloadPriority', this._isNotDownloaded(b,e));
         }
+        this.updateStylesheetCount();
       },
 
       /**
@@ -681,70 +680,36 @@ TODO: Flex Width & Height
         var e = ( evt.detail.e > this.traceStats['stats:maxTime']) ? this.traceStats['stats:maxTime'] : evt.detail.e;
         this.set('_currentBegin',b);
         this.set('_currentEnd',  e);
-        if(this._isDownloaded(b,e).length === 0){
-          this.$.timeline.addObsels(this._applyStyleOnObsels(this._getObselsForCurrentBounds()));
-        }
-        else{
+        this.$.timeline.setTemporalBounds(b,e);
+        this.$.scroller.update(b, e);
+        this.$.timeline.addObsels(this._applyStyleOnObsels(this._getObselsForCurrentBounds()));
+        if(this._isNotDownloaded(b,e).length !== 0){
           this.set('_downloadPriority', this._isNotDownloaded(b,e));
         }
+        this.updateStylesheetCount();
       },
 
-
-       _loadTimelineScrollerShift: function(process){
-         // Set the new bounds
-         this.set('_currentBegin', process.overall_begin);
-         this.set('_currentEnd',   process.overall_end);
-         // Create the process var
-         var b = process.shift_begin;
-         var e = process.shift_end;
-         var d = process.direction;
-         // True if we already loaded the obsels. False otherwise.
-         var already_loaded =
-           ((d === 'left' && this._currentEnd < this._maxEnd) ||
-           (d === 'right' && this._currentBegin > this._minBegin));
-         // Load the enw obsels if necessary.
-         if(already_loaded){
-          this.$.timeline.shiftObsels(this._applyStyleOnObsels(this._getObselsForCurrentBounds(b, e)), d);
-          this._launchLoadingProcess();
-         }
-         else{
-          this.$.progress.set('disabled', false);
-          var start = (d === 'left') ? this._maxEnd : this._currentBegin;
-          var end   = (d === 'left') ? this._currentEnd : this._minBegin;
-          var type  = (d === 'left') ? 'AFTER' : 'BEFORE';
-          this.$.timeline.shiftObsels([], d);
-          this.set('_downloadType', type);
-          this._downloadObsels(start, end);
-         }
-       },
-
-       /**
-        * .
-        *
-        * @param {!required} evt {String} The `timeline-scoller-shift` event.
-        *
-        * @method _onTimelineScrollerShift
-        */
-      _onTimelineScrollerShift: function(evt) {
-        // Push the new loading process in the waiting line.
-        this.push('_loadingProcessList', {
-          'type'         : 'timeline-scoller-shift',
-          'overall_begin': evt.detail.b,
-          'overall_end'  : evt.detail.e,
-          'shift_begin'  : evt.detail.nb,
-          'shift_end'    : evt.detail.ne,
-          'direction'    : evt.detail.d
-        });
-        // Launch the download process.
-        if(!this._isProcessLaunched){
-          this.set('_isProcessLaunched', true);
-          this._launchLoadingProcess();
-        }
-      },
-
-
-
-
+      /**
+       * .
+       *
+       * @param {!required} evt {String} The `timeline-scoller-shift` event.
+       *
+       * @method _onTimelineScrollerShift
+       */
+     _onTimelineScrollerShift: function(evt) {
+       var nb = evt.detail.nb;
+       var ne = evt.detail.ne;
+       var d  = evt.detail.d;
+       var ob = ( evt.detail.b < this.traceStats['stats:minTime']) ? this.traceStats['stats:minTime'] : evt.detail.b;
+       var oe = ( evt.detail.e > this.traceStats['stats:maxTime']) ? this.traceStats['stats:maxTime'] : evt.detail.e;
+       this.set('_currentBegin',ob);
+       this.set('_currentEnd',  oe);
+       this.$.timeline.shiftObsels(this._applyStyleOnObsels(this._getObselsForCurrentBounds(nb, ne)), d);
+       if(this._isNotDownloaded(ob,oe).length !== 0){
+         this.set('_downloadPriority', this._isNotDownloaded(b,e));
+       }
+       this.updateStylesheetCount();
+     }
 
     });
   </script>
