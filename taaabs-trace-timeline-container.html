@@ -2,13 +2,13 @@
 <link rel="import" href="../taaabs-trace-timeline/taaabs-trace-timeline.html">
 <link rel="import" href="../paper-progress/paper-progress.html">
 <link rel="import" href="../taaabs-themes/taaabs-theme.html">
+<link rel="import" href="../taaabs-taaabs/taaabs-taaabs.html">
 
 <!--
 `<taaabs-trace-timeline-container>` is a graphical elements that displays a timeline and its ruler for a kTBS trace.
 
-In typical use, just insert a `<taaabs-trace-timeline-container>`, and set the traceUri.
-TODO: Retrieve the trace with only the traceUri.
-TODO: Flex Width & Height
+In typical use, just insert a `<taaabs-trace-timeline-container>`, and set the traceUrl.
+TODO: Retrieve the trace with only the traceUrl.
 -->
 <dom-module id="taaabs-trace-timeline-container">
   <template>
@@ -43,10 +43,25 @@ TODO: Flex Width & Height
     </div>
   </template>
   <script>
-    Polymer({
+    TAAABS.TraceTimelineContainer = Polymer({
       is: 'taaabs-trace-timeline-container',
 
       properties: {
+
+        /** ================================================================ **/
+        /**                     PUBLIC PROPERTIES                            **/
+
+        /**
+         * The `taaabs-trace-timeline-stylesheet` component bound to this one.
+         * This helps updating the obsels count for each rule of the stylesheet.
+         *
+         * @attribute boundStylesheetComponent
+         * @type Object
+         */
+        boundStylesheetComponent: {
+          type: Object,
+          value: null
+        },
 
         /**
          * The trace.
@@ -62,10 +77,10 @@ TODO: Flex Width & Height
         /**
          * The trace URI.
          *
-         * @attribute traceUri
+         * @attribute traceUrl
          * @type String
          */
-        traceUri: {
+        traceUrl: {
           type: String,
           value: null
         },
@@ -74,12 +89,15 @@ TODO: Flex Width & Height
          * The trace stats.
          *
          * @attribute traceStats
-         * @type String
+         * @type Object
          */
         traceStats: {
-          type: String,
+          type: Object,
           value: null
         },
+
+        /** ================================================================ **/
+        /**                    PRIVATE PROPERTIES                            **/
 
         /**
          * Begin time of the current interval.
@@ -104,18 +122,8 @@ TODO: Flex Width & Height
         },
 
         /**
-         * Either 'FIRST', 'BEFORE' or 'AFTER'.
-         *
-         * @attribute _downloadType
-         * @type String
-         */
-        _downloadType: {
-         type: String,
-         value: ""
-        },
-
-        /**
-         * True if `timeline-scroller-new-bounds` is already listened. False otherwise.
+         * True if the `taaabs-trace-timeline-container` is already listening what it has to.
+         * False otherwise.
          *
          * @attribute _isEventListened
          * @type Boolean
@@ -126,99 +134,79 @@ TODO: Flex Width & Height
         },
 
         /**
-         * List of the loading process waiting to be launched.
+         * True if the first wave of download has been completed.
+         * False otherwise.
          *
-         * @attribute _loadingProcessList
+         * @attribute _firstDownloadDone
+         * @type Boolean
+         */
+        _firstDownloadDone:{
+          type: Boolean,
+          value: false
+        },
+
+        /**
+         * List of download "columns".
+         *
+         * @attribute _downloadBuffer
          * @type Array
          */
-        _loadingProcessList: {
-         type: Array,
-         value: []
-        },
-
-        /**
-         * List of the obsels currently downloaded.
-         *
-         * @attribute _loadingObselsList
-         * @type Array
-         */
-        _loadingObselsList: {
-          type: Array,
-          value: []
-        },
-
-        /**
-         * Max time ever downloaded.
-         *
-         * @attribute _maxEnd
-         * @type Number
-         */
-        _maxEnd: {
-          type: Number,
-          value: Number.NEGATIVE_INFINITY
-        },
-
-        /**
-         * Minimum time ever downloaded.
-         *
-         * @attribute _minBegin
-         * @type Number
-         */
-        _minBegin: {
-          type: Number,
-          value: Number.POSITIVE_INFINITY
-        },
-
-        /**
-         * List of the obsels.
-         *
-         * @attribute _obselsList
-         * @type Array
-         */
-        _obselsList: {
-          type: Array,
-          value: []
-        },
-
-        /**
-         * End of the second part of obsels to download.
-         *
-         * @attribute _secondPartEnd
-         * @type Number
-         */
-        _secondPartEnd: {
-          type: Number,
-          value: 0
-        },
-
-
-        /**
-        * TRYHARD *
-        */
-
         _downloadBuffer: {
           type: Array,
           value: []
         },
 
+        /**
+         * List of indexes of the _downloadBuffers that must be downloaded asap.
+         *
+         * @attribute _downloadPriority
+         * @type Array
+         */
         _downloadPriority: {
           type: Array,
           value: []
         },
 
+        /**
+         * Count of obsels downloaded.
+         *
+         * @attribute _obselsCount
+         * @type Number
+         */
         _obselsCount: {
           type: Number,
           value: 0
         },
 
-        boundStylesheetComponent: {
-          type: Object,
-          value: null
+        /**
+         * Index of the _downloadBuffer being downloaded.
+         *
+         * @attribute _downloadCurrentBufferIndex
+         * @type Number
+         */
+        _downloadCurrentBufferIndex: {
+          type: Number,
+          value: -1
         }
-
-
       },
 
+      /** ================================================================== **/
+      /**                     CONSTRUCTORS / DESTRUCTORS                     **/
+
+      /**
+       * Default constructor. Calls `_emptyAllProperties`.
+       *
+       * @method factoryImpl
+       */
+      factoryImpl: function() {
+        this._emptyAllProperties();
+      },
+
+      /**
+       * If not set yet, set the listeners.
+       *
+       * @method attached
+       */
       attached: function() {
         if(!this._isEventListened){
           this.$.scroller.addEventListener('timeline-scroller-new-bounds', this._onTimelineScrollerNewBounds.bind(this));
@@ -228,46 +216,55 @@ TODO: Flex Width & Height
         }
       },
 
-      ready: function() {},
+      /**
+       * Calls `_emptyAllProperties`.
+       *
+       * @method ready
+       */
+      ready: function() {
+        this._emptyAllProperties();
+      },
 
       /**
-       * Redraw the obsels with every obsel between `_currentBegin` and `_currentEnd`.
+       * Stop the downloads and calls `_emptyAllProperties`.
+       * Also calls `clear` on the timeline & the scroller.
        *
-       * @method updateTimeline
+       * @method ready
        */
-      updateTimeline: function(){
-        this.$.timeline.redrawObsels(this._applyStyleOnObsels(this._getObselsForCurrentBounds()));
-        this.updateStylesheetCount();
+      clear: function(){
+        if(this._xhr) this._xhr.abort();
+        this._emptyAllProperties();
+        this.$.timeline.clear();
+        this.$.scroller.clear();
       },
 
-      updateStylesheetCount: function(){
-        if(this.boundStylesheetComponent !== null){
-          var matchs = [];
-          for(var i = 0; i < this.stylesheet.rules.length; i++)
-            matchs.push({
-              'local':   0,
-              'overall': 0
-            });
-
-          var obs = this._getObselsForCurrentBounds(this.traceStats['stats:minTime'], this.traceStats['stats:maxTime']);
-          for(var i = 0; i < obs.length; i++){
-            var index = this._getObselStyle(obs[i]);
-            if(index !== -1){
-              matchs[index].overall += 1;
-              if(this._currentBegin <= obs[i].begin && obs[i].end <= this._currentEnd){
-                matchs[index].local += 1;
-              }
-            }
-          }
-          if(this.$['background-progress'].value !== 100)
-            for(var i = 0; i < this.stylesheet.rules.length; i++)
-              matchs[i].overall = '???';
-          this.boundStylesheetComponent.updateStylesheetCount(matchs);
-        }
+      /**
+       * Set all the properties to their default value.
+       *
+       * @method _emptyAllProperties
+       */
+      _emptyAllProperties: function(){
+        this.set('_downloadBuffer', []);
+        this.set('_currentBegin', 0);
+        this.set('_currentEnd', 0);
+        this.set('_downloadCurrentBufferIndex', -1);
+        this.set('_firstDownloadDone', false);
+        this.set('_isEventListened', false);
+        this.set('_downloadPriority', []);
+        this.set('_obselsCount',0);
+        this.$['background-progress'].value = 0;
       },
+
+      /** ================================================================== **/
+      /**                            INITIALIZATION                          **/
 
       /**
        * Reset the timeline and the scroller.
+       * Starts the passive download.
+       * Download works like this :
+       *    - The duration of the timeline is divided in as many column as there'll be displayed in the timeline.
+       *    - For each column, we download 30 obsels with no end time. This way, we can skip the empty columns.
+       *    - Once all the columns have been visited at elast once, we complete them.
        *
        * @method refresh
        */
@@ -319,12 +316,16 @@ TODO: Flex Width & Height
         this._launchDownload();
       },
 
+      /** ================================================================== **/
+      /**                               DOWNLOAD                             **/
+
       /**
        * Start a download of obsels. If there are some priority downlaod to do, download them first.
        *
        * @method _launchDownload
        */
       _launchDownload: function(){
+        // Update the stylesheet count.
         this.updateStylesheetCount();
         // If we don't have priority downloads, we download every obsel in background.
         if(this._downloadPriority.length === 0){
@@ -393,7 +394,7 @@ TODO: Flex Width & Height
         var minb  = (start) ? 'minb='+start  : '';
         var maxe  = (stop)  ? '&maxe='+stop  : '';
         var after = (uri)   ? '&after='+uri   : '';
-        var request = this.traceUri + '@obsels?'+minb+after+maxe+'&limit='+limit;
+        var request = this.traceUrl + '@obsels?'+minb+after+maxe+'&limit='+limit;
         var XMLReq = new XMLHttpRequest();
         XMLReq.open("GET", request);
         XMLReq.setRequestHeader('Content-Type', 'application/json');
@@ -411,6 +412,7 @@ TODO: Flex Width & Height
         XMLReq.onerror = function(err) {
          console.log(err);
         };
+        this.set('_xhr', XMLReq);
         XMLReq.send(null);
       },
 
@@ -435,20 +437,6 @@ TODO: Flex Width & Height
         // Update the timeline obsels.
         this.$.timeline.addObsels(this._applyStyleOnObsels(obs));
       },
-
-      /**
-       * Upadte the `background-progress` status.
-       *
-       * @param {!required} count {Number} The number of obsels downloaded.
-       *
-       * @method _updateBackgroundProgress
-       */
-      _updateBackgroundProgress: function(count) {
-        this.set('_obselsCount', this.get('_obselsCount') + count);
-        var progress = Math.floor( this.get('_obselsCount') / this.traceStats['stats:obselCount'] * 100 );
-        this.$['background-progress'].set('value', progress);
-      },
-
 
       /**
        * Sort the obsels downloaded ine hte `_downloadBuffer`.
@@ -488,6 +476,65 @@ TODO: Flex Width & Height
         }
       },
 
+      /**
+       * Upadte the `background-progress` status.
+       *
+       * @param {!required} count {Number} The number of obsels downloaded.
+       *
+       * @method _updateBackgroundProgress
+       */
+      _updateBackgroundProgress: function(count) {
+        this.set('_obselsCount', this.get('_obselsCount') + count);
+        var progress = Math.floor( this.get('_obselsCount') / this.traceStats['stats:obselCount'] * 100 );
+        this.$['background-progress'].set('value', progress);
+      },
+
+      /** ================================================================== **/
+      /**                                UPDATE                              **/
+
+      /**
+       * Redraw the obsels with every obsel between `_currentBegin` and `_currentEnd`.
+       *
+       * @method updateTimeline
+       */
+      updateTimeline: function(){
+        this.$.timeline.redrawObsels(this._applyStyleOnObsels(this._getObselsForCurrentBounds()));
+        this.updateStylesheetCount();
+      },
+
+      /**
+       * Update the obsel count for each rule in the stylesheet.
+       *
+       * @method updateStylesheetCount
+       */
+      updateStylesheetCount: function(){
+        if(this.boundStylesheetComponent !== null){
+          var matchs = [];
+          for(var i = 0; i < this.stylesheet.rules.length; i++)
+            matchs.push({
+              'local':   0,
+              'overall': 0
+            });
+
+          var obs = this._getObselsForCurrentBounds(this.traceStats['stats:minTime'], this.traceStats['stats:maxTime']);
+          for(var i = 0; i < obs.length; i++){
+            var index = this._getObselStyle(obs[i]);
+            if(index !== -1){
+              matchs[index].overall += 1;
+              if(this._currentBegin <= obs[i].begin && obs[i].end <= this._currentEnd){
+                matchs[index].local += 1;
+              }
+            }
+          }
+          if(this.$['background-progress'].value !== 100)
+            for(var i = 0; i < this.stylesheet.rules.length; i++)
+              matchs[i].overall = '???';
+          this.boundStylesheetComponent.updateStylesheetCount(matchs);
+        }
+      },
+
+      /** ================================================================== **/
+      /**                            OBSELS STYLING                          **/
 
       /**
        * Set the symbol of a list of obsels according to the `stylesheet`.
@@ -600,6 +647,9 @@ TODO: Flex Width & Height
         else return -1;
       },
 
+      /** ================================================================== **/
+      /**                           OBSELS RETRIEVE                          **/
+
       /**
        * Retrieve some obsels from `_downloadBuffer` between a begin time and an end time.
        *
@@ -647,6 +697,9 @@ TODO: Flex Width & Height
         }
         return result;
       },
+
+      /** ================================================================== **/
+      /**                            EVENT HANDLERS                          **/
 
       /**
        * TODO.
