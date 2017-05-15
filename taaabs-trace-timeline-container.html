@@ -359,8 +359,16 @@ TODO: Retrieve the trace with only the traceUrl.
             if(this._downloadBuffer[i].obsels.length > 0) uri = this._downloadBuffer[i].obsels[this._downloadBuffer[i].obsels.length - 1]['@id'];
             if(this._firstDownloadDone)
               this._downloadObsels(b, b + this._downloadPeriod - 1, 100, uri );
-            else
-              this._downloadObsels(b, null, 30, uri );
+            else{
+              // If the trace has less than 1000 obsels
+              if(this.traceStats['stats:obselCount'] <= 1000){
+                this._downloadObsels(b, null, this.traceStats['stats:obselCount'] + 1, uri);
+              }
+              else{
+                this._downloadObsels(b, null, 30, uri );
+              }
+            }
+
           }
         }
         else{
@@ -451,7 +459,7 @@ TODO: Retrieve the trace with only the traceUrl.
         // For each obsels in obs, if it fit in a column, we add it to the column.
         // If it doesn't fit, we set the column as "over" and increment the column position.
         for(var i = 0; i < obs.length; i++){
-          if(this._downloadBuffer[index].b <= obs[i].begin  && obs[i].end < this._downloadBuffer[index].e){
+          if(this._downloadBuffer[index].b <= obs[i].end  && obs[i].end < this._downloadBuffer[index].e){
             this._downloadBuffer[index].obsels.push(obs[i]);
           }
           else{
@@ -521,7 +529,7 @@ TODO: Retrieve the trace with only the traceUrl.
             var index = this._getObselStyle(obs[i]);
             if(index !== -1){
               matchs[index].overall += 1;
-              if(this._currentBegin <= obs[i].begin && obs[i].end <= this._currentEnd){
+              if(this._currentBegin <= obs[i].end && obs[i].end <= this._currentEnd){
                 matchs[index].local += 1;
               }
             }
@@ -669,7 +677,7 @@ TODO: Retrieve the trace with only the traceUrl.
         var obs = [];
         for(var i = ib; i <= eb; i++){
          for(var j = 0; j < this._downloadBuffer[i].obsels.length; j++){
-           if(this._downloadBuffer[i].obsels[j].begin >= b && this._downloadBuffer[i].obsels[j].end <= e){
+           if(this._downloadBuffer[i].obsels[j].end >= b && this._downloadBuffer[i].obsels[j].end <= e){
              obs.push(this._downloadBuffer[i].obsels[j])
            }
          }
