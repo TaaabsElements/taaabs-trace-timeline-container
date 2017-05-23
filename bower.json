@@ -17,10 +17,10 @@
   "main": "taaabs-trace-timeline-container.html",
   "license": "https://github.com/TaaabsElements/taaabs-trace-timeline-container/LICENSE",
   "dependencies": {
-    "polymer": "polymer/polymer",
+    "polymer": "Polymer/polymer#<2.*",
     "taaabs-trace-timeline": "https://github.com/TaaabsElements/taaabs-trace-timeline.git",
     "taaabs-trace-timeline-scroller": "https://github.com/TaaabsElements/taaabs-trace-timeline-scroller.git",
-    "paper-progress": "PolymerElements/paper-progress"
+    "paper-progress": "PolymerElements/paper-progress#<2.*"
   },
   "devDependencies": {
     "iron-component-page": "polymerelements/iron-component-page#^1.0.0",
