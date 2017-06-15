@@ -18,8 +18,8 @@
   "license": "https://github.com/TaaabsElements/taaabs-trace-timeline-container/LICENSE",
   "dependencies": {
     "polymer": "Polymer/polymer#<2.*",
-    "taaabs-trace-timeline": "https://github.com/TaaabsElements/taaabs-trace-timeline.git",
-    "taaabs-trace-timeline-scroller": "https://github.com/TaaabsElements/taaabs-trace-timeline-scroller.git",
+    "taaabs-trace-timeline": "TaaabsElements/taaabs-trace-timeline",
+    "taaabs-trace-timeline-scroller": "TaaabsElements/taaabs-trace-timeline-scroller",
     "paper-progress": "PolymerElements/paper-progress#<2.*"
   },
   "devDependencies": {
