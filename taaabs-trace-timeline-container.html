@@ -1,14 +1,20 @@
+<link rel="import" href="../app-localize-behavior/app-localize-behavior.html">
+<link rel="import" href="../notify-toast-behavior/notify-toast-behavior.html">
+<link rel="import" href="../paper-progress/paper-progress.html">
+<link rel="import" href="../taaabs-taaabs/taaabs-taaabs.html">
+<link rel="import" href="../taaabs-themes/taaabs-theme.html">
 <link rel="import" href="../taaabs-trace-timeline-scroller/taaabs-trace-timeline-scroller.html">
 <link rel="import" href="../taaabs-trace-timeline/taaabs-trace-timeline.html">
-<link rel="import" href="../paper-progress/paper-progress.html">
-<link rel="import" href="../taaabs-themes/taaabs-theme.html">
-<link rel="import" href="../taaabs-taaabs/taaabs-taaabs.html">
 
 <!--
 `<taaabs-trace-timeline-container>` is a graphical elements that displays a timeline and its ruler for a kTBS trace.
 
 In typical use, just insert a `<taaabs-trace-timeline-container>`, and set the traceUrl.
-TODO: Retrieve the trace with only the traceUrl.
+
+
+# TODO
+
+ - Retrieve the trace with only the traceUrl.
 -->
 <dom-module id="taaabs-trace-timeline-container">
   <template>
@@ -32,7 +38,6 @@ TODO: Retrieve the trace with only the traceUrl.
         --paper-progress-transition-timing-function: ease;
         --paper-progress-transition-duration: 0.25s;
         --paper-progress-active-color: var(--paper-blue-300);
-
       }
     </style>
     <div class="flex-vertical flexchild">
@@ -41,6 +46,9 @@ TODO: Retrieve the trace with only the traceUrl.
       <paper-progress id="progress" indeterminate disabled></paper-progress>
       <paper-progress id="background-progress" min="0" max="100" value="0"></paper-progress>
     </div>
+
+    <!-- Notify toast -->
+    <paper-toast class="fit-bottom" id="__notify_toast__" style="background-color:rgba(0,0,0,0.37)" duration=0> </paper-toast>
   </template>
   <script>
     TAAABS.TraceTimelineContainer = Polymer({
@@ -94,6 +102,41 @@ TODO: Retrieve the trace with only the traceUrl.
         traceStats: {
           type: Object,
           value: null
+        },
+
+        /**
+         * I18N. Either "en" or "fr" atm.
+         *
+         * @attribute language
+         * @type String
+         */
+        language: {
+         type: String,
+         notify: true,
+         value: "en"
+        },
+
+        /**
+         * I18N resources.
+         *
+         * @attribute resources
+         * @type Object
+         */
+        resources: {
+         type: Object,
+         notify: true,
+         value: function(){
+           return {
+             "en": {
+               "loading-trace":       "Loading the trace.",
+               "loading-trace-stats": "Loading the trace stats."
+             },
+             "fr": {
+               "loading-trace":       "Téléchargement de la trace.",
+               "loading-trace-stats": "Téléchargement des statistiques de la trace."
+             }
+           }
+         }
         },
 
         /** ================================================================ **/
@@ -190,6 +233,11 @@ TODO: Retrieve the trace with only the traceUrl.
         }
       },
 
+      behaviors: [
+        Polymer.AppLocalizeBehavior,
+        NotifyToastBehavior
+      ],
+
       /** ================================================================== **/
       /**                     CONSTRUCTORS / DESTRUCTORS                     **/
 
@@ -199,6 +247,15 @@ TODO: Retrieve the trace with only the traceUrl.
        * @method factoryImpl
        */
       factoryImpl: function() {
+        this._emptyAllProperties();
+      },
+
+      /**
+       * Calls `_emptyAllProperties`.
+       *
+       * @method ready
+       */
+      ready: function() {
         this._emptyAllProperties();
       },
 
@@ -216,13 +273,8 @@ TODO: Retrieve the trace with only the traceUrl.
         }
       },
 
-      /**
-       * Calls `_emptyAllProperties`.
-       *
-       * @method ready
-       */
-      ready: function() {
-        this._emptyAllProperties();
+      detached: function(){
+        this.clear();
       },
 
       /**
@@ -256,7 +308,7 @@ TODO: Retrieve the trace with only the traceUrl.
       },
 
       /** ================================================================== **/
-      /**                            INITIALIZATION                          **/
+      /**  Initialization                                                    **/
 
       /**
        * Reset the timeline and the scroller.
@@ -269,6 +321,52 @@ TODO: Retrieve the trace with only the traceUrl.
        * @method refresh
        */
       refresh: function(){
+        this._checkLoadedResources();
+      },
+
+      _checkLoadedResources: function(){
+        if(this.trace === null){
+          this.set('trace', new Samotraces.Ktbs.Trace(this.traceUrl));
+          this._loadTrace();
+        }
+        else if(this.traceStats === null){
+          this._loadTraceStats();
+        }
+        else{
+          this._init();
+        }
+      },
+
+      _loadTrace: function(){
+        var tid = this.notifyToast(this.localize('loading-trace'), {
+          'type': 'Log'
+        });
+        this.trace.load()
+          .then(function(){
+            this.closeToast(tid);
+            this._checkLoadedResources();
+          }.bind(this))
+          .catch(function(err){
+            console.log(err);
+          })
+      },
+
+      _loadTraceStats: function(){
+        var tid = this.notifyToast(this.localize('loading-trace-stats'), {
+          'type': 'Log'
+        });
+        this.trace.get_stats()
+          .then(function(stats){
+            this.set('traceStats', stats);
+            this.closeToast(tid);
+            this._checkLoadedResources();
+          }.bind(this))
+          .catch(function(err){
+            console.log(err);
+          })
+      },
+
+      _init: function(){
         // Get the begin and end of the trace.
         var b = this.traceStats['stats:minTime'];
         var e = this.traceStats['stats:maxTime'];
